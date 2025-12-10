@@ -23,7 +23,7 @@ class AvatarGenerator:
         if seed is None:
             seed = random.randint(1, 999999)
 
-        stil = "avataaars"
+        stil = "pixel-art"
         url = f"https://api.dicebear.com/9.x/{stil}/png?seed={seed}&backgroundColor=transparent"
 
         try:
