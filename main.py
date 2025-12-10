@@ -13,7 +13,8 @@ def main():
 
     print("--- TESTARE AVATAR ---")
     # Generăm un avatar
-    pixmap = AvatarGenerator.generate(seed="Utilizator123")
+    # Fără argumente -> intră pe ramura random.randint
+    pixmap = AvatarGenerator.generate()
 
     if pixmap:
         print("Avatar generat cu succes! (Obiect QPixmap creat)")
@@ -54,3 +55,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

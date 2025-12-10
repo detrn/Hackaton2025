@@ -55,3 +55,4 @@ class AvatarGenerator:
         except Exception as e:
             print(f"Eroare retea sau procesare avatar: {e}")
             return None
+
