@@ -2,6 +2,7 @@ import cv2
 import pygame
 import requests
 import io
+import datetime
 import random
 import os
 import sys
@@ -184,11 +185,12 @@ def run_pygame_app():
 
                     # 2. LOGICĂ SALVARE
                     if save_btn.collidepoint(mx, my):
-                        # Salvăm avatarul mare
-                        nume_fisier = "avatar_downloaded.png"
+                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        nume_fisier = f"asset/avatar_{timestamp}.png"
                         pygame.image.save(avatar_big, nume_fisier)
                         print(f"Imagine salvată ca {nume_fisier}")
-                        saved_message_timer = 120  # Afișăm mesajul timp de 120 frame-uri (2 sec)
+
+                        saved_message_timer = 120
 
                 elif state == 'VIEWER':
                     state = 'MAIN_APP'
