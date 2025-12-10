@@ -1,7 +1,7 @@
 import pygame
 import random
 import math
-
+import JocIEC
 # --- INITIALIZARE SI CONSTANTE (Stil din referinta) ---
 pygame.init()
 WIDTH, HEIGHT = 1000, 700

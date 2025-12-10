@@ -1,246 +1,422 @@
-import cv2
-import pygame
-import requests
-import io
-import random
-import os
 import sys
+import cv2
+import numpy as np
+import requests
+import random
+import time
+import subprocess  # <--- NECESAR PENTRU LANSAREA JOCURILOR
+
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QLabel, QVBoxLayout,
+    QPushButton, QHBoxLayout, QMessageBox, QStackedWidget, QLineEdit, QSizePolicy
+)
+from PyQt5.QtCore import Qt, QTimer, QRectF, pyqtSignal
+from PyQt5.QtGui import QPainter, QPen, QFont, QPixmap, QImage, QBrush
+
 
 # ==========================================
-# PARTEA 1: OPENCV - DETECȚIE ZÂMBET
+# BACKEND - GENERATOR AVATAR
 # ==========================================
+class AvatarGenerator:
+    @staticmethod
+    def generate(seed=None):
+        if seed is None:
+            seed = random.randint(1, 999999)
 
-cascade_face = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-cascade_smile = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
+        stil = "avataaars"
+        url = f"https://api.dicebear.com/9.x/{stil}/png?seed={seed}&backgroundColor=transparent"
 
-if cascade_face.empty() or cascade_smile.empty():
-    print("Eroare: Nu s-au putut încărca fișierele XML haarcascade!")
-    sys.exit()
+        try:
+            response = requests.get(url, timeout=5)
+            response.raise_for_status()
+
+            image = QImage()
+            image.loadFromData(response.content)
+
+            size = 400
+            image = image.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+            out_img = QImage(size, size, QImage.Format_ARGB32)
+            out_img.fill(Qt.transparent)
+
+            brush = QBrush(image)
+            painter = QPainter(out_img)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setBrush(brush)
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(0, 0, size, size)
+            painter.end()
+
+            return QPixmap.fromImage(out_img)
+
+        except Exception as e:
+            print(f"Eroare retea: {e}")
+            return None
 
 
-def get_face_coordinates(frame_gray):
-    faces = cascade_face.detectMultiScale(frame_gray, 1.2, 5, minSize=(60, 60))
-    if len(faces) > 0:
-        faces = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)
-        return faces[0]
-    return None
+# ==========================================
+# BACKEND - CAMERA
+# ==========================================
+class Camera:
+    def __init__(self):
+        self.cap = cv2.VideoCapture(0)
+        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        self.smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
 
+    def get_frame(self):
+        if self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if ret:
+                return cv2.flip(frame, 1)
+        return None
 
-def detecteaza_zambet_in_roi(roi_gray):
-    smiles = cascade_smile.detectMultiScale(roi_gray, scaleFactor=1.8, minNeighbors=25, minSize=(25, 25))
-    return len(smiles) > 0
+    def detect_smile(self, frame):
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = self.face_cascade.detectMultiScale(gray, 1.2, 5, minSize=(60, 60))
+        is_smiling = False
 
-
-def asteapta_zambetul_utilizatorului():
-    print("Se deschide camera... Zâmbește pentru a debloca aplicația.")
-    cam = cv2.VideoCapture(0)
-    if not cam.isOpened():
-        print("Eroare: Camera nu s-a putut deschide!")
-        return False
-
-    consecutive_smile_frames = 0
-    SMILE_THRESHOLD = 5
-
-    while True:
-        ret, frame = cam.read()
-        if not ret: break
-
-        frame = cv2.flip(frame, 1)
-        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        face_coords = get_face_coordinates(frame_gray)
-
-        status_text = "Priveste la camera..."
-        color = (0, 0, 255)
-
-        if face_coords is not None:
-            (x, y, w, h) = face_coords
+        for (x, y, w, h) in faces:
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            roi_gray = gray[y:y + h, x:x + w]
+            smiles = self.smile_cascade.detectMultiScale(roi_gray, scaleFactor=1.8, minNeighbors=25, minSize=(25, 25))
 
-            roi_gray = frame_gray[y:y + h, x:x + w]
-            is_smiling = detecteaza_zambet_in_roi(roi_gray)
+            if len(smiles) > 0:
+                is_smiling = True
+                for (sx, sy, sw, sh) in smiles:
+                    cv2.rectangle(frame, (x + sx, y + sy), (x + sx + sw, y + sy + sh), (0, 255, 0), 1)
 
-            if is_smiling:
-                consecutive_smile_frames += 1
-                status_text = f"Zambet detectat! Mentine... {consecutive_smile_frames}/{SMILE_THRESHOLD}"
-                color = (0, 255, 255)
+        return is_smiling, frame
+
+    def release(self):
+        if self.cap.isOpened():
+            self.cap.release()
+
+
+# ==========================================
+# GUI - PARTEA 1: CAMERA
+# ==========================================
+class OverlayLabel(QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.rotation_angle = 0
+        self.frame_count = 0
+        self.status_text = "ZÂMBEȘTE PENTRU A ÎNCEPE!"
+        self.status_color = Qt.white
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_animation)
+        self.timer.start(30)
+
+    def update_animation(self):
+        self.frame_count += 1
+        self.rotation_angle = (self.rotation_angle + 2) % 360
+        self.update()
+
+    def set_status(self, text, color):
+        self.status_text = text
+        self.status_color = color
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        radius = min(w, h) // 4
+        center_x, center_y = w // 2, h // 2
+
+        pen = QPen(self.status_color, 6)
+        painter.setPen(pen)
+        rect = QRectF(center_x - radius, center_y - radius, radius * 2, radius * 2)
+
+        for i in range(3):
+            start = (self.rotation_angle * 16) + (i * 120 * 16)
+            painter.drawArc(rect, start, 60 * 16)
+
+        font = QFont("Arial", 20, QFont.Bold)
+        painter.setFont(font)
+        painter.setPen(self.status_color)
+        text_rect = QRectF(0, center_y + radius + 20, w, 100)
+        painter.drawText(text_rect, Qt.AlignCenter, self.status_text)
+
+
+class PanelCamera(QWidget):
+    smile_confirmed = pyqtSignal()
+
+    def __init__(self, camera, parent=None):
+        super().__init__(parent)
+        self.camera = camera
+        self.layout = QVBoxLayout()
+        self.layout.setContentsMargins(0, 0, 0, 0)
+
+        self.camera_label = QLabel(self)
+        self.camera_label.setAlignment(Qt.AlignCenter)
+        self.camera_label.setStyleSheet("background-color: #1e1e1e;")
+
+        self.overlay = OverlayLabel(self)
+        self.smile_counter = 0
+        self.SMILE_THRESHOLD = 15
+
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_frame)
+        self.timer.start(30)
+
+    def resizeEvent(self, event):
+        self.camera_label.setGeometry(0, 0, self.width(), self.height())
+        self.overlay.setGeometry(0, 0, self.width(), self.height())
+
+    def update_frame(self):
+        frame = self.camera.get_frame()
+        if frame is not None:
+            smiling, debug_frame = self.camera.detect_smile(frame)
+
+            if smiling:
+                self.smile_counter += 1
+                self.overlay.set_status(f"MENȚINE... {self.smile_counter}", Qt.green)
             else:
-                consecutive_smile_frames = max(0, consecutive_smile_frames - 1)
-                status_text = "Fata detectata. Zambeste!"
-                color = (255, 0, 0)
+                self.smile_counter = max(0, self.smile_counter - 1)
+                self.overlay.set_status("TE ROG SĂ ZÂMBEȘTI!", Qt.white)
 
-            if consecutive_smile_frames >= SMILE_THRESHOLD:
-                print("Zâmbet confirmat! Pornim aplicația...")
-                status_text = "Succes! Pornire..."
-                color = (0, 255, 0)
-                cv2.putText(frame, status_text, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-                cv2.imshow('Detectie Zambet', frame)
-                cv2.waitKey(500)
-                cam.release()
-                cv2.destroyAllWindows()
-                return True
+            rgb_frame = cv2.cvtColor(debug_frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb_frame.shape
+            q_img = QImage(rgb_frame.data, w, h, ch * w, QImage.Format_RGB888)
+            self.camera_label.setPixmap(QPixmap.fromImage(q_img).scaled(
+                self.camera_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
+            ))
 
-        cv2.putText(frame, status_text, (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-        cv2.imshow('Detectie Zambet', frame)
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            cam.release()
-            cv2.destroyAllWindows()
-            return False
+            if self.smile_counter >= self.SMILE_THRESHOLD:
+                self.timer.stop()
+                self.smile_confirmed.emit()
 
 
 # ==========================================
-# PARTEA 2: PYGAME - GENERATOR & SAVE
+# GUI - PARTEA 2: AVATAR
 # ==========================================
+class PanelAvatar(QWidget):
+    go_next = pyqtSignal()
 
-WIDTH, HEIGHT = 1000, 700
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-BTN_BLUE = (70, 130, 180)
-BTN_GREEN = (40, 180, 100)  # Culoare pentru butonul de Save
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("background-color: white;")
+        layout = QVBoxLayout()
 
+        self.lbl_title = QLabel("AVATARUL TĂU ONLINE")
+        self.lbl_title.setAlignment(Qt.AlignCenter)
+        self.lbl_title.setFont(QFont("Arial", 24, QFont.Bold))
 
-def crop_circle(surface):
-    size = surface.get_size()
-    mask = pygame.Surface(size, pygame.SRCALPHA)
-    pygame.draw.circle(mask, (255, 255, 255, 255), (size[0] // 2, size[1] // 2), size[0] // 2)
-    new_surf = surface.copy().convert_alpha()
-    new_surf.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-    return new_surf
+        self.lbl_image = QLabel()
+        self.lbl_image.setAlignment(Qt.AlignCenter)
+        self.lbl_image.setMinimumSize(400, 400)
 
+        btn_layout = QHBoxLayout()
 
-def genereaza_avatar_online():
-    seed = random.randint(1, 999999)
-    stil = "avataaars"
-    url = f"https://api.dicebear.com/9.x/{stil}/png?seed={seed}&backgroundColor=transparent"
-    print(f"Generez avatar de la: {url}")
-    try:
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        image_stream = io.BytesIO(response.content)
-        avatar = pygame.image.load(image_stream).convert_alpha()
-        avatar = pygame.transform.smoothscale(avatar, (400, 400))
-        avatar = crop_circle(avatar)
-        return avatar
-    except Exception as e:
-        print(f"Eroare: {e}")
-        fallback = pygame.Surface((400, 400))
-        fallback.fill((255, 0, 0))
-        return fallback
+        self.btn_regen = QPushButton("Alt Avatar")
+        self.btn_regen.setStyleSheet(
+            "background-color: #3498db; color: white; padding: 15px; border-radius: 8px; font-size: 16px;")
+        self.btn_regen.clicked.connect(self.load_new_avatar)
 
+        self.btn_next = QPushButton("Continuă ->")
+        self.btn_next.setStyleSheet(
+            "background-color: #2ecc71; color: white; padding: 15px; border-radius: 8px; font-size: 16px; font-weight: bold;")
+        self.btn_next.clicked.connect(self.go_next.emit)
 
-def run_pygame_app():
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("IETTI: Online Avatar Generator")
-    clock = pygame.time.Clock()
-    font = pygame.font.SysFont("Arial", 30)
-    font_small = pygame.font.SysFont("Arial", 20)
+        btn_layout.addWidget(self.btn_regen)
+        btn_layout.addWidget(self.btn_next)
 
-    # Ecran Loading
-    screen.fill(WHITE)
-    msg = font.render("Zâmbet confirmat! Se descarcă avatarul...", True, BLACK)
-    screen.blit(msg, (WIDTH // 2 - 250, HEIGHT // 2))
-    pygame.display.flip()
+        layout.addWidget(self.lbl_title)
+        layout.addStretch()
+        layout.addWidget(self.lbl_image)
+        layout.addStretch()
+        layout.addLayout(btn_layout)
+        self.setLayout(layout)
 
-    # Generare inițială
-    avatar_big = genereaza_avatar_online()
-    avatar_mini = pygame.transform.smoothscale(avatar_big, (120, 120))
+        self.current_pixmap = None  # Stocăm imaginea curentă
 
-    pos_mini = (20, 20)
-    rect_mini = pygame.Rect(pos_mini[0], pos_mini[1], 120, 120)
-    pos_big = (WIDTH // 2 - 200, HEIGHT // 2 - 200)
-
-    # --- BUTOANE ---
-    # Buton Regenerare (Dreapta jos)
-    regen_btn = pygame.Rect(WIDTH - 220, HEIGHT - 100, 200, 60)
-    # Buton Salvare (Stânga jos față de cel de regenerare)
-    save_btn = pygame.Rect(WIDTH - 440, HEIGHT - 100, 200, 60)
-
-    state = 'MAIN_APP'
-    saved_message_timer = 0  # Pentru a afișa "Salvat!" timp de 2 secunde
-
-    running = True
-    while running:
-        screen.fill(WHITE)
-        events = pygame.event.get()
-        for event in events:
-            if event.type == pygame.QUIT: running = False
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                mx, my = pygame.mouse.get_pos()
-                if state == 'MAIN_APP':
-                    if rect_mini.collidepoint(mx, my): state = 'VIEWER'
-
-                    # 1. LOGICĂ REGENERARE
-                    if regen_btn.collidepoint(mx, my):
-                        # Desenăm loading rapid
-                        pygame.draw.rect(screen, WHITE, (WIDTH // 2 - 200, HEIGHT // 2, 400, 50))
-                        load_txt = font.render("Se descarcă...", True, BLACK)
-                        screen.blit(load_txt, (WIDTH // 2 - 100, HEIGHT // 2))
-                        pygame.display.flip()
-
-                        avatar_big = genereaza_avatar_online()
-                        avatar_mini = pygame.transform.smoothscale(avatar_big, (120, 120))
-                        saved_message_timer = 0  # Resetăm mesajul de salvare
-
-                    # 2. LOGICĂ SALVARE
-                    if save_btn.collidepoint(mx, my):
-                        # Salvăm avatarul mare
-                        nume_fisier = "avatar_downloaded.png"
-                        pygame.image.save(avatar_big, nume_fisier)
-                        print(f"Imagine salvată ca {nume_fisier}")
-                        saved_message_timer = 120  # Afișăm mesajul timp de 120 frame-uri (2 sec)
-
-                elif state == 'VIEWER':
-                    state = 'MAIN_APP'
-
-        if state == 'MAIN_APP':
-            # Background
-            for i in range(0, HEIGHT, 20): pygame.draw.line(screen, (240, 240, 255), (0, i), (WIDTH, i))
-            pygame.draw.circle(screen, (200, 200, 200), (pos_mini[0] + 60, pos_mini[1] + 60), 62)
-            screen.blit(avatar_mini, pos_mini)
-
-            welcome = font.render("Aplicație Profil Online", True, BLACK)
-            screen.blit(welcome, (WIDTH // 2 - 120, HEIGHT // 2))
-
-            # --- DESENARE BUTOANE ---
-
-            # Buton Regenerare (Albastru)
-            pygame.draw.rect(screen, BTN_BLUE, regen_btn, border_radius=10)
-            btn_txt = font.render("Alt Avatar", True, WHITE)
-            screen.blit(btn_txt, (regen_btn.x + 40, regen_btn.y + 15))
-
-            # Buton Salvare (Verde)
-            pygame.draw.rect(screen, BTN_GREEN, save_btn, border_radius=10)
-            save_txt = font.render("Salvează", True, WHITE)
-            screen.blit(save_txt, (save_btn.x + 45, save_btn.y + 15))
-
-            # --- MESAJ CONFIRMARE SALVARE ---
-            if saved_message_timer > 0:
-                saved_message_timer -= 1
-                msg_saved = font_small.render("Imagine salvată cu succes!", True, BTN_GREEN)
-                screen.blit(msg_saved, (save_btn.x, save_btn.y - 30))
-
-        elif state == 'VIEWER':
-            s = pygame.Surface((WIDTH, HEIGHT));
-            s.set_alpha(220);
-            s.fill(BLACK);
-            screen.blit(s, (0, 0))
-            screen.blit(avatar_big, pos_big)
-            pygame.draw.circle(screen, WHITE, (WIDTH // 2, HEIGHT // 2), 200, 5)
-            info = font.render("Click oriunde pentru a închide", True, WHITE)
-            screen.blit(info, (WIDTH // 2 - 180, HEIGHT - 100))
-
-        pygame.display.flip()
-        clock.tick(60)
-
-    pygame.quit()
+    def load_new_avatar(self):
+        self.lbl_title.setText("Se descarcă...")
+        QApplication.processEvents()
+        pixmap = AvatarGenerator.generate()
+        if pixmap:
+            self.current_pixmap = pixmap  # Salvăm imaginea
+            self.lbl_image.setPixmap(pixmap)
+            self.lbl_title.setText("AVATARUL TĂU ONLINE")
+        else:
+            self.lbl_title.setText("Eroare la descărcare")
 
 
 # ==========================================
-# MAIN
+# GUI - PARTEA 3: MENIU JOCURI (MODIFICAT PENTRU AVATAR COLȚ)
 # ==========================================
+class PanelMenu(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("background-color: #ecf0f1;")
+
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(50, 30, 50, 50)
+
+        # --- HEADER NOU (Titlu + Avatar Colț) ---
+        header_layout = QHBoxLayout()
+
+        # Titlu (Stânga)
+        title = QLabel("BINE AI VENIT, STUDENTULE!")
+        title.setFont(QFont("Arial", 28, QFont.Bold))
+        title.setStyleSheet("color: #2c3e50;")
+
+        # Avatar Colț (Dreapta)
+        self.lbl_avatar_corner = QLabel()
+        self.lbl_avatar_corner.setFixedSize(120, 120)
+        self.lbl_avatar_corner.setScaledContents(True)
+        # Un mic stil pentru chenar rotund
+        self.lbl_avatar_corner.setStyleSheet("""
+            border: 3px solid #3498db;
+            border-radius: 60px; 
+            background-color: white;
+        """)
+
+        header_layout.addWidget(title)
+        header_layout.addStretch()  # Împinge avatarul în dreapta
+        header_layout.addWidget(self.lbl_avatar_corner)
+
+        main_layout.addLayout(header_layout)
+        main_layout.addSpacing(40)
+        # ----------------------------------------
+
+        # Input Nume
+        lbl_nume = QLabel("Cum te cheamă?")
+        lbl_nume.setFont(QFont("Arial", 14))
+
+        self.input_nume = QLineEdit()
+        self.input_nume.setPlaceholderText("Introdu numele tău aici...")
+        self.input_nume.setStyleSheet("""
+            QLineEdit { padding: 15px; font-size: 18px; border: 2px solid #bdc3c7; border-radius: 10px; background-color: white; }
+            QLineEdit:focus { border: 2px solid #3498db; }
+        """)
+
+        main_layout.addWidget(lbl_nume)
+        main_layout.addWidget(self.input_nume)
+        main_layout.addSpacing(40)
+
+        # Sectiune Jocuri
+        lbl_alege = QLabel("ALEGE SPECIALIZAREA:")
+        lbl_alege.setAlignment(Qt.AlignCenter)
+        lbl_alege.setFont(QFont("Arial", 18, QFont.Bold))
+        main_layout.addWidget(lbl_alege)
+        main_layout.addSpacing(20)
+
+        btn_layout = QHBoxLayout()
+
+        self.btn_telecom = self.create_game_btn("📡 TELECOM", "#8e44ad")
+        self.btn_hardware = self.create_game_btn("🔌 HARDWARE", "#e67e22")
+        self.btn_software = self.create_game_btn("💻 SOFTWARE", "#2980b9")
+
+        # --- CONECTARE BUTOANE ---
+        self.btn_telecom.clicked.connect(lambda: self.start_game("Telecomunicații"))
+        self.btn_hardware.clicked.connect(lambda: self.start_game("Hardware"))
+        self.btn_software.clicked.connect(lambda: self.start_game("Software"))
+
+        btn_layout.addWidget(self.btn_telecom)
+        btn_layout.addWidget(self.btn_hardware)
+        btn_layout.addWidget(self.btn_software)
+
+        main_layout.addLayout(btn_layout)
+        main_layout.addStretch()
+        self.setLayout(main_layout)
+
+    def create_game_btn(self, text, color):
+        btn = QPushButton(text)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        btn.setStyleSheet(f"""
+            QPushButton {{ background-color: {color}; color: white; font-size: 20px; font-weight: bold; border-radius: 15px; padding: 20px; }}
+            QPushButton:hover {{ background-color: {color}dd; margin-top: -5px; }}
+        """)
+        return btn
+
+    # --- FUNCȚIE NOUĂ PENTRU PRIMIREA IMAGINII ---
+    def set_avatar_image(self, pixmap):
+        if pixmap:
+            # Scalăm imaginea să se potrivească în colț (120x120)
+            scaled_pixmap = pixmap.scaled(120, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.lbl_avatar_corner.setPixmap(scaled_pixmap)
+
+    # ---------------------------------------------
+
+    def start_game(self, game_name):
+        nume = self.input_nume.text().strip()
+        if not nume:
+            QMessageBox.warning(self, "Atenție", "Te rog să introduci numele tău înainte de a începe!")
+            self.input_nume.setFocus()
+            return
+
+        # --- LANSARE JOCURI CA PROCESE SEPARATE ---
+        if game_name == "Hardware":
+            try:
+                # Lansăm jocul de hardware (asigură-te că joc_iec.py e în folder)
+                subprocess.Popen([sys.executable, "joc_iec.py"])
+            except Exception as e:
+                QMessageBox.critical(self, "Eroare", f"Nu s-a putut lansa jocul Hardware: {e}")
+
+        elif game_name == "Telecomunicații":
+            try:
+                # Lansăm jocul de semnale (asigură-te că JocIETTI.py e în folder)
+                subprocess.Popen([sys.executable, "JocIETTI.py"])
+            except Exception as e:
+                QMessageBox.critical(self, "Eroare", f"Nu s-a putut lansa jocul Telecom: {e}")
+
+        elif game_name == "Software":
+            QMessageBox.information(self, "Info", "Acest joc este în dezvoltare!")
+
+
+# ==========================================
+# MAIN WINDOW - ORCHESTRATOR
+# ==========================================
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Aplicație Facultate - IETTI")
+        self.resize(1000, 800)
+
+        self.stack = QStackedWidget()
+        self.setCentralWidget(self.stack)
+
+        # 1. Ecran Cameră
+        self.camera = Camera()
+        self.panel_camera = PanelCamera(self.camera)
+        self.panel_camera.smile_confirmed.connect(self.go_to_avatar)
+
+        # 2. Ecran Avatar
+        self.panel_avatar = PanelAvatar()
+        self.panel_avatar.go_next.connect(self.go_to_menu)
+
+        # 3. Ecran Meniu
+        self.panel_menu = PanelMenu()
+
+        self.stack.addWidget(self.panel_camera)  # Index 0
+        self.stack.addWidget(self.panel_avatar)  # Index 1
+        self.stack.addWidget(self.panel_menu)  # Index 2
+
+    def go_to_avatar(self):
+        self.camera.release()
+        self.panel_avatar.load_new_avatar()
+        self.stack.setCurrentIndex(1)
+
+    def go_to_menu(self):
+        # --- TRANSFERUL IMAGINII ---
+        # Luăm imaginea curentă din panoul Avatar
+        avatar_pixmap = self.panel_avatar.current_pixmap
+        # O trimitem către panoul Meniu
+        self.panel_menu.set_avatar_image(avatar_pixmap)
+        # ---------------------------
+
+        self.stack.setCurrentIndex(2)
+
+    def closeEvent(self, event):
+        self.camera.release()
+        event.accept()
+
+
 if __name__ == "__main__":
-    if asteapta_zambetul_utilizatorului():
-        run_pygame_app()
-    else:
-        print("Ieșire.")
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
