@@ -51,7 +51,7 @@ class IEGame:
         while running:
             self.screen.fill((30, 30, 30))
             elapsed = time.time() - self.start_time
-            time_left = max(0, 60 - elapsed)
+            time_left = max(0, 20 - elapsed)
 
             # --- CALCUL SCOR ---
             # 5000 - (Timp * 50) - (Greseli * 200)

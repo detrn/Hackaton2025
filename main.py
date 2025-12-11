@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
         print("Trecere la Panel Jocuri...")
         game_panel = PanelJocuri()
         self.splitter.replaceWidget(1, game_panel)
+        game_panel.close_main_window.connect(self.close)
 
         self.right_panel.setParent(None)
         self.right_panel.deleteLater()
@@ -71,6 +72,7 @@ class MainWindow(QMainWindow):
 
         # Păstrăm proporțiile și după schimbare
         self.splitter.setSizes([500, self.width() - 500])
+
 
     def closeEvent(self, event):
         self.camera.release()

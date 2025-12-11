@@ -244,7 +244,7 @@ while running:
 pygame.quit()
 if next_action == "mainframe":
     try:
-        subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "MainFrame.py")])
+        subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "leaderboard.py")])
     except Exception as e:
         print(f"Eroare lansare MainFrame: {e}")
 sys.exit()
