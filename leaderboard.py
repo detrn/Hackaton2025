@@ -4,28 +4,21 @@ import os
 from PyQt6 import QtWidgets, QtCore, QtGui
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap
 
-
 class LeaderboardWindow(QtWidgets.QMainWindow):
-    # Semnal: Când se închide, anunță Panelul
-    go_back_signal = QtCore.pyqtSignal()
-
     def __init__(self):
         super().__init__()
 
         # --- 1. CONFIGURARE CĂI ---
-        self.games_dir = os.path.dirname(os.path.abspath(__file__))
-        self.root_dir = os.path.dirname(self.games_dir)  # Folderul mare al proiectului
-
-        self.ui_path = os.path.join(self.games_dir, "LeaderBoard.ui")
-        self.db_path = os.path.join(self.games_dir, "database.csv")
-        self.css_path = os.path.join(self.games_dir, "style.qss")
+        self.current_dir = os.path.dirname(os.path.abspath(__file__))
+        self.ui_path = os.path.join(self.current_dir, "LeaderBoard.ui")
+        self.db_path = os.path.join(self.current_dir, "database.csv")
+        self.css_path = os.path.join(self.current_dir, "style.qss")
 
         # --- 2. ÎNCĂRCARE UI ---
         try:
             if os.path.exists(self.ui_path):
                 from PyQt6 import uic
                 uic.loadUi(self.ui_path, self)
-                # Conectăm butoanele dacă există
                 if hasattr(self, 'pushButton'): self.pushButton.clicked.connect(self.go_back)
                 if hasattr(self, 'btnClose'): self.btnClose.clicked.connect(self.go_back)
                 if hasattr(self, 'commandLinkButton'): self.commandLinkButton.clicked.connect(self.go_back)
@@ -37,7 +30,6 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
 
         self.setWindowTitle("Clasament General")
 
-        # Încărcare stil
         if os.path.exists(self.css_path):
             with open(self.css_path, "r") as f:
                 self.setStyleSheet(f.read())
@@ -69,9 +61,6 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
         self.go_back_signal.emit()
 
     def load_data(self):
-        """
-        Încarcă toate intrările din CSV, fără a elimina duplicatele, și sortează descrescător după punctaj.
-        """
         players_list = []
 
         if not os.path.exists(self.db_path):
@@ -82,9 +71,7 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
             with open(self.db_path, mode='r', encoding='utf-8-sig') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if "Nume" not in row:
-                        continue
-
+                    if "Nume" not in row: continue
                     nume = row["Nume"].strip()
                     raw_avatar = row.get("Avatar", "").strip()
                     spec = row.get("Specializare", "N/A").strip()
@@ -103,7 +90,6 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
         except Exception as e:
             print(f"Eroare citire CSV: {e}")
 
-        # Sortare descrescătoare după punctaj
         sorted_players = sorted(players_list, key=lambda x: x['punctaj'], reverse=True)
         self.display_table(sorted_players)
 
@@ -115,7 +101,6 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
         model = QStandardItemModel(len(data), len(headers))
         model.setHorizontalHeaderLabels(headers)
 
-        # Setări generale tabel
         self.tableView.setIconSize(QtCore.QSize(60, 60))
         self.tableView.verticalHeader().setVisible(False)
         self.tableView.verticalHeader().setDefaultSectionSize(70)
@@ -130,11 +115,7 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
             # 1. Avatar
             item_avatar = QStandardItem()
             avatar_path = info['avatar']
-            possible_paths = [
-                avatar_path,  # cale absolută
-                os.path.join(self.root_dir, avatar_path),
-                os.path.join(self.games_dir, avatar_path)
-            ]
+            possible_paths = [avatar_path, os.path.join(self.current_dir, avatar_path)]
             found_icon = False
             for path in possible_paths:
                 if os.path.exists(path):
@@ -160,17 +141,9 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
             font_spec = item_spec.font()
             font_spec.setBold(True)
             item_spec.setFont(font_spec)
-
-            # Culori specifice specializare
-            colors = {
-                "AIA": "#2980b9",
-                "IE": "#d35400",
-                "IEC": "#8e44ad",
-                "IETTI": "#16a085"
-            }
+            colors = {"AIA": "#2980b9","IE": "#d35400","IEC": "#8e44ad","IETTI": "#16a085"}
             if info['spec'] in colors:
                 item_spec.setForeground(QtGui.QColor(colors[info['spec']]))
-
             model.setItem(i, 3, item_spec)
 
             # 4. Punctaj
@@ -183,14 +156,11 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
             model.setItem(i, 4, item_score)
 
         self.tableView.setModel(model)
-
-        # Ajustări coloane
-        self.tableView.setColumnWidth(0, 50)  # Loc
-        self.tableView.setColumnWidth(1, 80)  # Avatar
-        self.tableView.setColumnWidth(3, 120)  # Specializare
-        self.tableView.setColumnWidth(4, 100)  # Punctaj
-        self.tableView.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.Stretch)  # Nume ia restul spațiului
-
+        self.tableView.setColumnWidth(0, 50)
+        self.tableView.setColumnWidth(1, 80)
+        self.tableView.setColumnWidth(3, 120)
+        self.tableView.setColumnWidth(4, 100)
+        self.tableView.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.Stretch)
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)

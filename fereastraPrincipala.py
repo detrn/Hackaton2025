@@ -7,10 +7,20 @@ from PyQt6.QtCore import Qt, QTimer
 from camera import Camera
 from GUI.panelCamera import PanelCamera
 from GUI.panelDreapta import PanelDreapta
-from GUI.panelJocuri import PanelJocuri  # Panelul jocuri modular
+from Hackaton2025.panelJocuri import PanelJocuri  # Panelul jocuri modular
 
 class MainWindow(QMainWindow):
     def __init__(self):
+        # În MainWindow
+        def open_leaderboard(self):
+            self.leaderboard_window = LeaderboardWindow()
+            self.leaderboard_window.go_back_signal.connect(self.show_main_window)
+            self.leaderboard_window.show()
+            self.hide()  # ascunde MainWindow
+
+        def show_main_window(self):
+            self.showMaximized()
+
         super().__init__()
         self.setWindowTitle("Aplicatie facultate")
 
@@ -68,10 +78,12 @@ class MainWindow(QMainWindow):
         self.splitter.setStretchFactor(1, 3)  # PanelJocuri ocupă restul
         self.splitter.setSizes([self.camera_panel.width(), self.width() - self.camera_panel.width()])
 
+
     def closeEvent(self, event):
         """Eliberează resursele camerei la închidere"""
         self.camera.release()
         event.accept()
+
 
 
 if __name__ == "__main__":
