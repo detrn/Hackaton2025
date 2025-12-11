@@ -1,215 +1,350 @@
-import pygame
+import subprocess
+import sys
 import math
 import random
+import os
+import csv
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QGraphicsOpacityEffect, QHBoxLayout
+from PyQt6.QtGui import QFont, QColor, QPainter, QPen, QBrush, QPolygonF
+from PyQt6.QtCore import Qt, QPropertyAnimation, QTimer, QPointF, QRectF
+
+# --- 1. CONFIGURARE ---
+if len(sys.argv) > 3:
+    PLAYER_NAME = sys.argv[1]
+    PLAYER_AVATAR = sys.argv[2]
+    PLAYER_SPEC = sys.argv[3]
+else:
+    PLAYER_NAME = "TestPlayer"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(base_dir)
+    PLAYER_AVATAR = os.path.join(project_root, "asset", "avatar_downloaded.png")
+    PLAYER_SPEC = "IETTI"
+
+# --- CULORI NEON ---
+BG_COLOR = QColor(10, 15, 30)
+GRID_COLOR = QColor(30, 40, 60)
+NEON_GREEN = QColor(50, 255, 50)
+NEON_RED = QColor(255, 50, 80)
+NEON_BLUE = QColor(0, 200, 255)
+NEON_YELLOW = QColor(255, 230, 0)
+WHITE = QColor(255, 255, 255)
 
 
-def run_game():
-    # --- INITIALIZARE ---
-    pygame.init()
-    WIDTH, HEIGHT = 1000, 700
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("IETTI: Signal Master - Future Engineer")
-    clock = pygame.time.Clock()
-
-    # --- CULORI ---
-    BG_COLOR = (10, 15, 30)
-    GRID_COLOR = (30, 40, 60)
-    NEON_GREEN = (50, 255, 50)
-    NEON_RED = (255, 50, 80)
-    NEON_BLUE = (0, 200, 255)
-    NEON_YELLOW = (255, 230, 0)
-    WHITE = (255, 255, 255)
-
-    # --- FONTURI ---
+# --- 2. SALVARE CSV ---
+def save_score_csv(nume, avatar, specializare, punctaj):
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    filename = os.path.join(current_dir, "../Games/database.csv")
     try:
-        font_ui = pygame.font.SysFont("Consolas", 24, bold=True)
-        font_big = pygame.font.SysFont("Consolas", 80, bold=True)
-    except:
-        font_ui = pygame.font.SysFont("Arial", 24, bold=True)
-        font_big = pygame.font.SysFont("Arial", 80, bold=True)
-
-    # --- VARIABILE JOC (Definite aici pentru a fi locale funcției) ---
-    particles = []
-    score = 0
-    time_limit = 30
-    start_ticks = pygame.time.get_ticks()
-    game_active = True
-
-    offset_y = HEIGHT // 2
-    phase = 0
-    player_amp = 50
-    player_freq = 0.04
-    target_amp = 100
-    target_freq = 0.04
-    grid_scroll = 0
-
-    # --- FUNCȚII LOCALE ---
-    def create_explosion(x, y, color):
-        for _ in range(20):
-            particles.append({
-                'x': x, 'y': y,
-                'vx': random.uniform(-5, 5), 'vy': random.uniform(-5, 5),
-                'radius': random.randint(2, 5), 'color': color, 'life': 255
+        file_exists = os.path.isfile(filename)
+        with open(filename, mode='a', newline='', encoding='utf-8') as f:
+            fieldnames = ["Nume", "Avatar", "Specializare", "Punctaj"]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow({
+                "Nume": nume,
+                "Avatar": avatar,
+                "Specializare": specializare,
+                "Punctaj": punctaj
             })
+    except Exception as e:
+        print(f"Eroare CSV: {e}")
 
-    def update_and_draw_particles(surface):
-        for p in particles[:]:
-            p['x'] += p['vx'];
-            p['y'] += p['vy']
-            p['life'] -= 10;
-            p['radius'] -= 0.1
-            if p['life'] <= 0 or p['radius'] <= 0:
-                particles.remove(p);
-                continue
-            s = pygame.Surface((int(p['radius'] * 2), int(p['radius'] * 2)), pygame.SRCALPHA)
-            pygame.draw.circle(s, p['color'] + (p['life'],), (p['radius'], p['radius']), p['radius'])
-            surface.blit(s, (p['x'] - p['radius'], p['y'] - p['radius']))
 
-    def draw_glow_line(surface, color, points, width=2):
-        glow_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        glow_color = color + (50,)
-        if len(points) > 1:
-            pygame.draw.lines(glow_surf, glow_color, False, points, width + 10)
-            pygame.draw.lines(glow_surf, glow_color, False, points, width + 4)
-        surface.blit(glow_surf, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
-        if len(points) > 1:
-            pygame.draw.lines(surface, color, False, points, width)
+class Particle:
+    def __init__(self, x, y, color):
+        self.x = x
+        self.y = y
+        self.vx = random.uniform(-3, 3)  # Viteza mai mica pt performanta
+        self.vy = random.uniform(-3, 3)
+        self.radius = random.randint(2, 4)
+        self.color = QColor(color)
+        self.life = 200  # Viata mai scurta
 
-    def draw_grid(surface, offset):
-        spacing = 50
-        for x in range(0, WIDTH, spacing):
-            draw_x = (x - offset) % WIDTH
-            pygame.draw.line(surface, GRID_COLOR, (draw_x, 0), (draw_x, HEIGHT), 1)
-        for y in range(0, HEIGHT, spacing):
-            pygame.draw.line(surface, GRID_COLOR, (0, y), (WIDTH, y), 1)
-        pygame.draw.line(surface, (50, 60, 80), (0, HEIGHT // 2), (WIDTH, HEIGHT // 2), 2)
 
-    def draw_scanlines(surface):
-        for y in range(0, HEIGHT, 4):
-            pygame.draw.line(surface, (0, 0, 0, 50), (0, y), (WIDTH, y), 1)
+class SignalGame(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle(f"IETTI: Signal Master - {PLAYER_NAME}")
 
-    def new_target():
-        nonlocal target_amp
-        target_amp = random.randint(40, 200)
+        # Ascunde cursorul pentru Touchscreen
+        self.setCursor(Qt.CursorShape.BlankCursor)
 
-    def reset_game():
-        nonlocal score, start_ticks, game_active, player_amp
-        score = 0
-        game_active = True
-        start_ticks = pygame.time.get_ticks()
-        player_amp = 50
-        new_target()
+        self.offset_x = 0
 
-    # Inițializare țintă
-    new_target()
+        # Variabile joc
+        self.MAX_SCORE = 5000
+        self.time_limit = 20
+        self.score_pachete_salvate = 0
+        self.final_score = 0
+        self.score_saved = False
+        self.game_active = True
 
-    # --- BUCLA PRINCIPALĂ ---
-    running = True
-    while running:
-        dt = clock.tick(60) / 1000.0
-        grid_scroll += 1
-        phase += 0.2
+        # Parametri undă
+        self.phase = 0
+        self.player_amp = 50
+        self.target_amp = 100
+        self.freq = 0.04
 
-        if game_active:
-            elapsed = (pygame.time.get_ticks() - start_ticks) / 1000
-            time_left = time_limit - elapsed
+        self.particles = []
+
+        # Timer (Game Loop) - Setat la 30 FPS pentru performanta pe Raspberry Pi
+        # 1000ms / 30fps = ~33ms
+        self.anim_timer = QTimer()
+        self.anim_timer.timeout.connect(self.update_game)
+        self.anim_timer.start(33)
+        self.game_start_timestamp = None
+
+        # --- UI SETUP ---
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+
+        # Header
+        self.header = QWidget()
+        self.header.setStyleSheet("background-color: black; border-bottom: 2px solid #00C8FF;")
+        self.header.setFixedHeight(60)
+
+        header_layout = QVBoxLayout(self.header)
+        header_layout.setContentsMargins(20, 0, 20, 0)
+
+        text_layout = QHBoxLayout()
+        font_hud = QFont("Consolas", 16, QFont.Weight.Bold)
+
+        self.score_label = QLabel(f"PACHETE: {self.score_pachete_salvate}")
+        self.score_label.setFont(font_hud)
+        self.score_label.setStyleSheet(f"color: {NEON_YELLOW.name()}; border: none;")
+
+        self.time_label = QLabel("60.0s")
+        self.time_label.setFont(font_hud)
+        self.time_label.setStyleSheet(f"color: white; border: none;")
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        text_layout.addWidget(self.score_label)
+        text_layout.addStretch()
+        text_layout.addWidget(self.time_label)
+        header_layout.addLayout(text_layout)
+
+        self.layout.addWidget(self.header, alignment=Qt.AlignmentFlag.AlignTop)
+        self.layout.addStretch()
+
+        # Instructions
+        self.instr_label = QLabel("TAP UP / DOWN to Calibrate")
+        self.instr_label.setFont(QFont("Consolas", 14))
+        self.instr_label.setStyleSheet("color: rgba(100, 200, 255, 150); background: transparent; margin-bottom: 20px;")
+        self.instr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.layout.addWidget(self.instr_label)
+
+        # Game Over Screen
+        self.game_over_widget = QWidget()
+        self.game_over_widget.setStyleSheet("background-color: rgba(0, 0, 0, 220);")
+        go_layout = QVBoxLayout(self.game_over_widget)
+        go_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.go_title = QLabel("MISSION COMPLETE")
+        self.go_title.setFont(QFont("Consolas", 48, QFont.Weight.Bold))
+        self.go_title.setStyleSheet(f"color: {NEON_GREEN.name()};")
+        self.go_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.go_score = QLabel("")
+        self.go_score.setFont(QFont("Consolas", 28, QFont.Weight.Bold))
+        self.go_score.setStyleSheet(f"color: {NEON_YELLOW.name()};")
+        self.go_score.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.leaderboard_btn = QPushButton(">> CLICK PENTRU CLASAMENT <<")
+        self.leaderboard_btn.setFont(QFont("Consolas", 18))
+        self.leaderboard_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.leaderboard_btn.setStyleSheet(
+            f"background-color: transparent; color: white; border: 2px solid {NEON_BLUE.name()}; padding: 10px 20px;")
+        self.leaderboard_btn.clicked.connect(self.go_to_leaderboard)
+
+        go_layout.addWidget(self.go_title)
+        go_layout.addWidget(self.go_score)
+        go_layout.addWidget(self.leaderboard_btn)
+
+        self.game_over_widget.setParent(self)
+        self.game_over_widget.hide()
+
+        self.new_target()
+
+    def resizeEvent(self, event):
+        self.game_over_widget.resize(self.size())
+        super().resizeEvent(event)
+
+    def new_target(self):
+        self.target_amp = random.randint(40, 200)
+
+    def mousePressEvent(self, event):
+        if self.game_active:
+            # Control tactil simplificat
+            if event.pos().y() < self.height() // 2:
+                if self.player_amp < 300: self.player_amp += 10
+            else:
+                if self.player_amp > 10: self.player_amp -= 10
+
+    def create_explosion(self, x, y, color):
+        # Reducem numarul de particule pentru performanta
+        for _ in range(8):
+            self.particles.append(Particle(x, y, color))
+
+    def update_game(self):
+        # Update Grid mai rar
+        self.offset_x += 2
+        if self.offset_x > 60: self.offset_x = 0
+
+        if self.game_active:
+            if self.game_start_timestamp is None:
+                self.game_start_timestamp = 0  # Simplificat
+
+            # Folosim un counter intern simplu pentru timp
+            # Fiecare tick e 33ms
+            self.game_start_timestamp += 33
+            elapsed = self.game_start_timestamp / 1000.0
+            time_left = max(0, self.time_limit - elapsed)
+
+            current_score = int(self.MAX_SCORE - (elapsed * 50) + (self.score_pachete_salvate * 100))
+            current_score = max(0, current_score)
+
+            self.time_label.setText(f"{time_left:.1f}s")
+
+            if time_left < 10:
+                self.time_label.setStyleSheet(f"color: {NEON_RED.name()}; font-weight: bold;")
+
+            diff = abs(self.player_amp - self.target_amp)
+            if diff < 15:  # Marja mai permisiva
+                self.score_pachete_salvate += 1
+                self.score_label.setText(f"PACHETE: {self.score_pachete_salvate}")
+                self.create_explosion(self.width() // 2, self.height() // 2, NEON_YELLOW)
+                self.new_target()
+
             if time_left <= 0:
-                time_left = 0
-                game_active = False
-                create_explosion(WIDTH // 2, HEIGHT // 2, NEON_RED)
+                self.game_active = False
+                self.final_score = current_score
+                self.show_game_over()
 
-        # Input
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+        # Update particles
+        for p in self.particles[:]:
+            p.x += p.vx
+            p.y += p.vy
+            p.life -= 15  # Dispar mai repede
+            if p.life <= 0:
+                self.particles.remove(p)
 
-            if event.type == pygame.KEYDOWN:
-                if game_active:
-                    if event.key == pygame.K_UP: player_amp += 10
-                    if event.key == pygame.K_DOWN: player_amp -= 10
-                else:
-                    if event.key == pygame.K_r: reset_game()
+        self.phase += 0.3
+        self.update()  # Redeseneaza ecranul
 
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                if game_active:
-                    mx, my = pygame.mouse.get_pos()
-                    if my < HEIGHT // 2:
-                        player_amp += 10
-                    else:
-                        player_amp -= 10
-                else:
-                    reset_game()
+    def show_game_over(self):
+        if not self.score_saved:
+            save_score_csv(PLAYER_NAME, PLAYER_AVATAR, PLAYER_SPEC, self.final_score)
+            self.score_saved = True
 
-        # Desenare
-        screen.fill(BG_COLOR)
-        draw_grid(screen, grid_scroll)
+        self.header.setVisible(False)
+        self.instr_label.setVisible(False)
+        self.go_score.setText(f"SCOR FINAL: {self.final_score}")
+        self.game_over_widget.setVisible(True)
+        self.game_over_widget.raise_()
 
+        # Fara animatie fade-in complexa pentru performanta
+        opacity_effect = QGraphicsOpacityEffect()
+        self.game_over_widget.setGraphicsEffect(opacity_effect)
+        opacity_effect.setOpacity(1)
+
+    def go_to_leaderboard(self):
+        self.close()
+        try:
+            subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "leaderboard.py")])
+        except Exception as e:
+            print(f"Eroare: {e}")
+
+    def draw_glow_polyline(self, painter, points, color, width=2):
+        """ Varianta Optimizata: Doar 2 straturi in loc de 3 """
+        if not points: return
+
+        # 1. Glow (Transparent si lat)
+        glow_color = QColor(color)
+        glow_color.setAlpha(60)  # Mai putin transparent pentru vizibilitate
+        painter.setPen(
+            QPen(glow_color, width + 6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.drawPolyline(points)
+
+        # 2. Core (Solid)
+        color.setAlpha(255)
+        painter.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.drawPolyline(points)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        # Antialiasing-ul consuma mult. Il oprim pentru performanta maxima daca inca e lag.
+        # Daca e ok, poti decomenta linia urmatoare:
+        # painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # --- FUNDAL ---
+        painter.fillRect(self.rect(), BG_COLOR)
+
+        # --- GRID OPTIMIZAT ---
+        pen = QPen(GRID_COLOR)
+        pen.setWidth(1)
+        painter.setPen(pen)
+
+        w, h = self.width(), self.height()
+        spacing = 60  # Grid mai larg = mai putine linii de desenat
+
+        # Linii verticale
+        for x in range(0, w, spacing):
+            draw_x = int((x + self.offset_x) % w)
+            painter.drawLine(draw_x, 0, draw_x, h)
+
+        # Linii orizontale
+        for y in range(0, h, spacing):
+            painter.drawLine(0, y, w, y)
+
+        # Linie centrala
+        center_pen = QPen(QColor(50, 60, 80))
+        center_pen.setWidth(2)
+        painter.setPen(center_pen)
+        painter.drawLine(0, h // 2, w, h // 2)
+
+        # --- UNDE ---
+        offset_y = h // 2
+
+        # OPTIMIZARE CRITICA: Calculam puncte din 10 in 10 pixeli (step=10)
+        # Inainte era 5. Asta reduce calculul la jumatate.
+        step = 10
+
+        # Target Wave
         points_target = []
+        for x in range(0, w + step, step):
+            y = offset_y + math.sin((x * self.freq) + self.phase) * self.target_amp
+            points_target.append(QPointF(float(x), y))
+
+        # Player Wave
         points_player = []
-        for x in range(0, WIDTH, 5):
-            y_t = offset_y + math.sin((x * target_freq) + phase) * target_amp
-            points_target.append((x, y_t))
-            y_p = offset_y + math.sin((x * player_freq) + phase) * player_amp
-            points_player.append((x, y_p))
+        for x in range(0, w + step, step):
+            y = offset_y + math.sin((x * self.freq) + self.phase) * self.player_amp
+            points_player.append(QPointF(float(x), y))
 
-        draw_glow_line(screen, NEON_RED, points_target, 3)
-        draw_glow_line(screen, NEON_GREEN, points_player, 4)
+        self.draw_glow_polyline(painter, points_target, NEON_RED, 3)
+        self.draw_glow_polyline(painter, points_player, NEON_GREEN, 4)
 
-        if game_active:
-            diff = abs(player_amp - target_amp)
+        # --- UI ELEMENTS ---
+        if self.game_active:
+            diff = abs(self.player_amp - self.target_amp)
             bar_color = NEON_RED if diff > 15 else NEON_GREEN
-            pygame.draw.rect(screen, bar_color, (WIDTH - 30, HEIGHT // 2 - diff, 10, diff * 2))
 
-            if diff < 10:
-                score += 1
-                create_explosion(WIDTH // 2, HEIGHT // 2, NEON_YELLOW)
-                create_explosion(WIDTH // 4, HEIGHT // 2, NEON_GREEN)
-                create_explosion(3 * WIDTH // 4, HEIGHT // 2, NEON_GREEN)
-                new_target()
+            # Bara simplificata (fara glow separat)
+            painter.setBrush(QBrush(bar_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRect(int(w - 30), int(offset_y - diff), 15, int(diff * 2))
 
-        update_and_draw_particles(screen)
-
-        # UI
-        pygame.draw.rect(screen, (0, 0, 0), (0, 0, WIDTH, 60))
-        pygame.draw.line(screen, NEON_BLUE, (0, 60), (WIDTH, 60), 2)
-
-        if game_active:
-            lbl_score = font_ui.render(f"SIGNAL LOCKED: {score}", True, NEON_YELLOW)
-            screen.blit(lbl_score, (20, 20))
-
-            # Bara Timp
-            bar_width = 300
-            fill_width = int((time_left / time_limit) * bar_width) if time_limit > 0 else 0
-            col_time = NEON_GREEN if time_left > 10 else NEON_RED
-            pygame.draw.rect(screen, (50, 50, 50), (WIDTH - 320, 20, bar_width, 20))
-            pygame.draw.rect(screen, col_time, (WIDTH - 320, 20, fill_width, 20))
-            pygame.draw.rect(screen, WHITE, (WIDTH - 320, 20, bar_width, 20), 2)
-
-            lbl_time = font_ui.render(f"{time_left:.1f}s", True, WHITE)
-            screen.blit(lbl_time, (WIDTH - 390, 18))
-
-            lbl_instr = font_ui.render("TAP UP / DOWN to Calibrate", True, (100, 200, 255))
-            rect_instr = lbl_instr.get_rect(center=(WIDTH // 2, HEIGHT - 30))
-            screen.blit(lbl_instr, rect_instr)
-        else:
-            s = pygame.Surface((WIDTH, HEIGHT));
-            s.set_alpha(200);
-            s.fill((0, 0, 0));
-            screen.blit(s, (0, 0))
-            lbl_go = font_big.render("CONNECTION LOST", True, NEON_RED)
-            lbl_final = font_ui.render(f"DATA PACKETS SAVED: {score}", True, NEON_GREEN)
-            lbl_rst = font_ui.render(">> PRESS R TO RECONNECT <<", True, WHITE)
-            alpha = abs(math.sin(pygame.time.get_ticks() * 0.005)) * 255
-            lbl_rst.set_alpha(int(alpha))
-            screen.blit(lbl_go, lbl_go.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50)))
-            screen.blit(lbl_final, lbl_final.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 50)))
-            screen.blit(lbl_rst, lbl_rst.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 100)))
-
-        draw_scanlines(screen)
-        pygame.display.flip()
-
-    pygame.quit()
+        # Particule
+        for p in self.particles:
+            c = QColor(p.color)
+            c.setAlpha(180)  # Transparenta fixa pentru viteza
+            painter.setBrush(QBrush(c))
+            painter.drawEllipse(QPointF(p.x, p.y), p.radius, p.radius)
 
 
 if __name__ == "__main__":
-    run_game()
+    app = QApplication(sys.argv)
+    window = SignalGame()
+    window.showFullScreen()  # FullScreen pentru Raspberry Pi
+    sys.exit(app.exec())
