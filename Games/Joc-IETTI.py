@@ -1,226 +1,282 @@
 import pygame
+import math
 import random
-import time
 import sys
 import os
 import csv
+import subprocess
+import time
 
-# --- 1. CONFIGURARE (Argumente din Panel) ---
+# --- 1. CONFIGURARE (FĂRĂ ID) ---
+# Se asteapta: script.py Nume Avatar Specializare
 if len(sys.argv) > 3:
-    PLAYER_NAME = sys.argv[1]
-    PLAYER_AVATAR = sys.argv[2]
-    PLAYER_SPEC = sys.argv[3]
+    PLAYER_NAME, PLAYER_AVATAR, PLAYER_SPEC = sys.argv[1:4]
 else:
-    # Default pentru teste
-    PLAYER_NAME = "Test"
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(base_dir)
-    PLAYER_AVATAR = os.path.join(project_root, "asset", "avatar_downloaded.png")
-    PLAYER_SPEC = "IE"
+    PLAYER_NAME, PLAYER_AVATAR, PLAYER_SPEC = "TestPlayer", "path", "IETTI"
 
 
 # --- 2. SALVARE CSV ---
 def save_score_csv(nume, avatar, specializare, punctaj):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     filename = os.path.join(current_dir, "database.csv")
-    file_exists = os.path.isfile(filename)
-
     try:
+        file_exists = os.path.isfile(filename)
         with open(filename, mode='a', newline='', encoding='utf-8') as f:
-            # Ordine: Nume, Avatar, Specializare, Punctaj
-            fieldnames = ["Nume", "Avatar", "Specializare", "Punctaj"]
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=["Nume", "Avatar", "Specializare", "Punctaj"])
+            if not file_exists: writer.writeheader()
+            writer.writerow({"Nume": nume, "Avatar": avatar, "Specializare": specializare, "Punctaj": punctaj})
+    except:
+        pass
 
-            if not file_exists:
-                writer.writeheader()
 
-            writer.writerow({
-                "Nume": nume,
-                "Avatar": avatar,
-                "Specializare": specializare,
-                "Punctaj": punctaj
+def run_game():
+    # --- INITIALIZARE ---
+    pygame.init()
+    WIDTH, HEIGHT = 1000, 700
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption(f"IETTI: Signal Master - {PLAYER_NAME}")
+    clock = pygame.time.Clock()
+
+    # --- CULORI ---
+    BG_COLOR = (10, 15, 30)
+    GRID_COLOR = (30, 40, 60)
+    NEON_GREEN = (50, 255, 50)
+    NEON_RED = (255, 50, 80)
+    NEON_BLUE = (0, 200, 255)
+    NEON_YELLOW = (255, 230, 0)
+    WHITE = (255, 255, 255)
+
+    # --- FONTURI ---
+    try:
+        font_ui = pygame.font.SysFont("Consolas", 24, bold=True)
+        font_big = pygame.font.SysFont("Consolas", 80, bold=True)
+    except:
+        font_ui = pygame.font.SysFont("Arial", 24, bold=True)
+        font_big = pygame.font.SysFont("Arial", 80, bold=True)
+
+    # --- VARIABILE JOC ---
+    particles = []
+
+    # Logica de scor noua
+    MAX_SCORE = 5000
+    time_limit = 60  # Setat la 60 de secunde
+    start_time_real = time.time()
+    score_pachete_salvate = 0
+    final_score = 0
+    score_saved = False
+
+    game_active = True
+    next_action = None
+
+    offset_y = HEIGHT // 2
+    phase = 0
+    player_amp = 50
+    player_freq = 0.04
+    target_amp = 100
+    target_freq = 0.04
+    grid_scroll = 0
+
+    # --- FUNCȚII LOCALE ---
+    def create_explosion(x, y, color):
+        for _ in range(20):
+            particles.append({
+                'x': x, 'y': y,
+                'vx': random.uniform(-5, 5), 'vy': random.uniform(-5, 5),
+                'radius': random.randint(2, 5), 'color': color, 'life': 255
             })
-            print(f"[DB] Salvat: {nume} | {specializare} | {punctaj}")
-    except Exception as e:
-        print(f"[EROARE CSV] {e}")
 
+    def update_and_draw_particles(surface):
+        for p in particles[:]:
+            p['x'] += p['vx'];
+            p['y'] += p['vy'];
+            p['life'] -= 10;
+            p['radius'] -= 0.1
+            if p['life'] <= 0 or p['radius'] <= 0:
+                particles.remove(p);
+                continue
+            s = pygame.Surface((int(p['radius'] * 2), int(p['radius'] * 2)), pygame.SRCALPHA)
+            pygame.draw.circle(s, p['color'] + (p['life'],), (p['radius'], p['radius']), p['radius'])
+            surface.blit(s, (p['x'] - p['radius'], p['y'] - p['radius']))
 
-class IEGame:
-    def __init__(self):
-        pygame.init()
-        self.screen = pygame.display.set_mode((800, 500))
-        pygame.display.set_caption(f"IE - Inginerie Electrică ({PLAYER_NAME})")
+    def draw_glow_line(surface, color, points, width=2):
+        glow_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        glow_color = color + (50,)
+        if len(points) > 1:
+            pygame.draw.lines(glow_surf, glow_color, False, points, width + 10)
+            pygame.draw.lines(glow_surf, glow_color, False, points, width + 4)
+        surface.blit(glow_surf, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+        if len(points) > 1:
+            pygame.draw.lines(surface, color, False, points, width)
 
-        # Fonts
-        self.FONT = pygame.font.Font(None, 50)
-        self.SMALL_FONT = pygame.font.Font(None, 30)
+    def draw_grid(surface, offset):
+        spacing = 50
+        for x in range(0, WIDTH, spacing):
+            draw_x = (x - offset) % WIDTH
+            pygame.draw.line(surface, GRID_COLOR, (draw_x, 0), (draw_x, HEIGHT), 1)
+        for y in range(0, HEIGHT, spacing):
+            pygame.draw.line(surface, GRID_COLOR, (0, y), (WIDTH, y), 1)
+        pygame.draw.line(surface, (50, 60, 80), (0, HEIGHT // 2), (WIDTH, HEIGHT // 2), 2)
 
-        # Stări
-        self.STATE_MENU = 0
-        self.STATE_GAME = 1
-        self.STATE_COMPLETE = 2
-        self.state = self.STATE_MENU
+    def draw_scanlines(surface):
+        for y in range(0, HEIGHT, 4):
+            pygame.draw.line(surface, (0, 0, 0, 50), (0, y), (WIDTH, y), 1)
 
-        self.score_saved = False  # Flag salvare
+    def new_target():
+        nonlocal target_amp
+        target_amp = random.randint(40, 200)
 
-        # Configurare Fire
-        self.WIRE_COLORS = [
-            (255, 0, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255),
-            (0, 255, 0), (0, 255, 255), (255, 165, 0)
-        ]
-        self.LEFT_X = 150
-        self.Y_POSITIONS = [100, 160, 220, 280, 340, 400, 460]
-        self.TARGET_AREAS = [
-            {"color": color, "rect": pygame.Rect(600, y - 30, 100, 60)}
-            for color, y in zip(self.WIRE_COLORS, self.Y_POSITIONS)
-        ]
+    def reset_game():
+        nonlocal score_pachete_salvate, start_time_real, game_active, player_amp, score_saved
+        score_pachete_salvate = 0
+        game_active = True
+        start_time_real = time.time()
+        player_amp = 50
+        score_saved = False
+        new_target()
 
-        self.wires = []
-        self.dragging = None
-        self.TIMER_START = 30
-        self.MAX_SCORE = 5000
+    # Inițializare țintă
+    new_target()
 
-        self.reset_wires()
+    # --- BUCLA PRINCIPALĂ ---
+    running = True
+    while running:
+        dt = clock.tick(60) / 1000.0
+        grid_scroll += 1
+        phase += 0.2
 
-    def reset_wires(self):
-        random.shuffle(self.Y_POSITIONS)
-        self.wires = []
-        for color, y in zip(self.WIRE_COLORS, self.Y_POSITIONS):
-            self.wires.append({"color": color, "start": [self.LEFT_X, y], "placed": False})
+        # --- LOGICA SCOR SI TIMP ---
+        if game_active:
+            elapsed = time.time() - start_time_real
+            time_left = max(0, time_limit - elapsed)
 
-        self.dragging = None
-        self.round_start_time = time.time()
-        self.round_score = 0
-        self.time_left = self.TIMER_START
-        self.last_tick = time.time()
-        self.score_saved = False
+            # Calcul scor dinamic: 5000 - (TimpScurs * 100) + (PacheteSalvate * 100)
+            current_score = int(MAX_SCORE - (elapsed * 100) + (score_pachete_salvate * 100))
+            current_score = max(0, current_score)
 
-    def draw_button(self, text, x, y, w, h):
-        mouse = pygame.mouse.get_pos()
-        click = pygame.mouse.get_pressed()
-        # Efect hover
-        if x < mouse[0] < x + w and y < mouse[1] < y + h:
-            color = (100, 200, 100)  # Verde deschis la hover
+            if time_left <= 0:
+                time_left = 0
+                game_active = False
+                final_score = current_score  # Îngheață scorul
+                create_explosion(WIDTH // 2, HEIGHT // 2, NEON_RED)
         else:
-            color = (70, 70, 70)
+            # Scorul si timpul raman înghețate
+            time_left = 0
+            current_score = final_score
 
-        pygame.draw.rect(self.screen, color, (x, y, w, h), border_radius=12)
+        # Input
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
 
-        # Centrare text
-        lbl = self.FONT.render(text, True, (255, 255, 255))
-        rect = lbl.get_rect(center=(x + w // 2, y + h // 2))
-        self.screen.blit(lbl, rect)
+            if event.type == pygame.KEYDOWN or event.type == pygame.MOUSEBUTTONDOWN:
+                if game_active:
+                    if event.key == pygame.K_UP or (
+                            event.type == pygame.MOUSEBUTTONDOWN and event.pos[1] < HEIGHT // 2):
+                        player_amp += 10
+                    if event.key == pygame.K_DOWN or (
+                            event.type == pygame.MOUSEBUTTONDOWN and event.pos[1] >= HEIGHT // 2):
+                        player_amp -= 10
+                else:
+                    # Tasta R pentru reset, Click/Enter pentru Clasament
+                    if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                        reset_game()
+                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                        next_action = "mainframe"
+                        running = False
 
-        # Return True dacă e click
-        return click[0] == 1 and x < mouse[0] < x + w and y < mouse[1] < y + h
+        # Logică Game Active
+        if game_active:
+            diff = abs(player_amp - target_amp)
 
-    def draw_menu(self):
-        self.screen.fill((25, 25, 25))
-        title = self.FONT.render("IE - Conectează Firele", True, (255, 255, 255))
-        self.screen.blit(title, (200, 120))
+            # Condiție de victorie: semnalul se suprapune
+            if diff < 10:
+                score_pachete_salvate += 1  # Pachet salvat
+                create_explosion(WIDTH // 2, HEIGHT // 2, NEON_YELLOW)
+                new_target()  # Generează o nouă țintă
 
-        if self.draw_button("Start Joc", 300, 250, 200, 60):
-            self.state = self.STATE_GAME
-            self.reset_wires()
+        # Desenare
+        screen.fill(BG_COLOR)
+        draw_grid(screen, grid_scroll)
 
-    def draw_game(self):
-        self.screen.fill((30, 30, 30))
+        # Generare puncte undă
+        points_target = []
+        points_player = []
+        for x in range(0, WIDTH, 5):
+            y_t = offset_y + math.sin((x * target_freq) + phase) * target_amp
+            points_target.append((x, y_t))
+            y_p = offset_y + math.sin((x * player_freq) + phase) * player_amp
+            points_player.append((x, y_p))
 
-        # Timer logic
-        now = time.time()
-        if now - self.last_tick >= 1:
-            self.time_left -= 1
-            self.last_tick = now
+        draw_glow_line(screen, NEON_RED, points_target, 3)
+        draw_glow_line(screen, NEON_GREEN, points_player, 4)
 
-        if self.time_left <= 0:
-            self.state = self.STATE_COMPLETE
+        # Bara de diferență amplitudine (Feedback vizual)
+        if game_active:
+            bar_color = NEON_RED if diff > 15 else NEON_GREEN
+            pygame.draw.rect(screen, bar_color, (WIDTH - 30, HEIGHT // 2 - diff, 10, diff * 2))
+
+        update_and_draw_particles(screen)
 
         # UI
-        self.screen.blit(self.FONT.render(f"Timp: {int(self.time_left)}", True, (255, 255, 255)), (20, 20))
-        self.screen.blit(self.FONT.render(f"Scor: {self.round_score}", True, (255, 255, 255)), (600, 20))
+        pygame.draw.rect(screen, (0, 0, 0), (0, 0, WIDTH, 60))
+        pygame.draw.line(screen, NEON_BLUE, (0, 60), (WIDTH, 60), 2)
 
-        # Zone și Fire
-        for area in self.TARGET_AREAS:
-            pygame.draw.rect(self.screen, area["color"], area["rect"])
-            self.screen.blit(self.SMALL_FONT.render("Circuit", True, (255, 255, 255)),
-                             (area["rect"].x + 10, area["rect"].y + 10))
+        lbl_score_pkts = font_ui.render(f"PACHETE SALVATE: {score_pachete_salvate}", True, NEON_YELLOW)
+        screen.blit(lbl_score_pkts, (20, 20))
 
-        for w in self.wires:
-            pygame.draw.circle(self.screen, w["color"], w["start"], 20)
-            if self.dragging == w:
-                mx, my = pygame.mouse.get_pos()
-                pygame.draw.line(self.screen, w["color"], w["start"], (mx, my), 5)
-                pygame.draw.circle(self.screen, w["color"], (mx, my), 15)
+        # Bara Timp
+        if game_active:
+            bar_width = 300
+            fill_width = int((time_left / time_limit) * bar_width) if time_limit > 0 else 0
+            col_time = NEON_GREEN if time_left > 10 else NEON_RED
 
-        # Verificare victorie
-        if all(w["placed"] for w in self.wires):
-            elapsed = time.time() - self.round_start_time
-            # Calcul scor (Max 5000)
-            score = int(self.MAX_SCORE - (elapsed * 100))
-            self.round_score = max(0, min(score, self.MAX_SCORE))
-            self.state = self.STATE_COMPLETE
+            pygame.draw.rect(screen, (50, 50, 50), (WIDTH - 320, 20, bar_width, 20))
+            pygame.draw.rect(screen, col_time, (WIDTH - 320, 20, fill_width, 20))
+            pygame.draw.rect(screen, WHITE, (WIDTH - 320, 20, bar_width, 20), 2)
 
-    def draw_complete(self):
-        self.screen.fill((20, 20, 20))
+            lbl_time = font_ui.render(f"{time_left:.1f}s", True, WHITE)
+            screen.blit(lbl_time, (WIDTH - 390, 18))
 
-        msg = "Circuit Complet!" if self.round_score > 0 else "Timpul a expirat!"
-        col = (0, 255, 0) if self.round_score > 0 else (255, 50, 50)
+            lbl_instr = font_ui.render("TAP UP / DOWN to Calibrate", True, (100, 200, 255))
+            rect_instr = lbl_instr.get_rect(center=(WIDTH // 2, HEIGHT - 30))
+            screen.blit(lbl_instr, rect_instr)
 
-        txt = self.FONT.render(msg, True, col)
-        self.screen.blit(txt, (250, 150))
+        # Game Over Screen
+        if not game_active:
+            if not score_saved:
+                save_score_csv(PLAYER_NAME, PLAYER_AVATAR, PLAYER_SPEC, final_score)
+                score_saved = True
 
-        sc_txt = self.SMALL_FONT.render(f"Scor Final: {self.round_score}", True, (255, 255, 255))
-        self.screen.blit(sc_txt, (300, 220))
+            s = pygame.Surface((WIDTH, HEIGHT));
+            s.set_alpha(200);
+            s.fill((0, 0, 0));
+            screen.blit(s, (0, 0))
 
-        # SALVARE AUTOMATĂ
-        if not self.score_saved:
-            save_score_csv(PLAYER_NAME, PLAYER_AVATAR, PLAYER_SPEC, self.round_score)
-            self.score_saved = True
+            lbl_go = font_big.render("MISSION COMPLETE", True, NEON_GREEN if time_left == 0 else NEON_RED)
+            lbl_final = font_ui.render(f"SCOR FINAL: {final_score}", True, NEON_YELLOW)
+            lbl_cls = font_ui.render(">> CLICK FOR CLASAMENT <<", True, WHITE)
 
-        # BUTON REDIRECȚIONARE
-        # Textul "Catre Clasament" indică utilizatorului ce se va întâmpla
-        if self.draw_button("Catre Clasament ->", 200, 350, 400, 60):
-            # Închidem jocul. PanelJocuri va detecta asta și va deschide Leaderboard.
-            pygame.quit()
-            sys.exit()
+            # Efect de pulsare
+            alpha = abs(math.sin(pygame.time.get_ticks() * 0.005)) * 255
+            lbl_cls.set_alpha(int(alpha))
 
-    def handle_events(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            mx, my = pygame.mouse.get_pos()
-            for w in self.wires:
-                if not w["placed"]:
-                    sx, sy = w["start"]
-                    if abs(mx - sx) < 20 and abs(my - sy) < 20: self.dragging = w
+            screen.blit(lbl_go, lbl_go.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50)))
+            screen.blit(lbl_final, lbl_final.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 50)))
+            screen.blit(lbl_cls, lbl_cls.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 100)))
 
-        if event.type == pygame.MOUSEBUTTONUP:
-            if self.dragging:
-                mx, my = pygame.mouse.get_pos()
-                for area in self.TARGET_AREAS:
-                    if area["rect"].collidepoint(mx, my) and area["color"] == self.dragging["color"]:
-                        self.dragging["start"] = [area["rect"].centerx, area["rect"].centery]
-                        self.dragging["placed"] = True
-                self.dragging = None
+        draw_scanlines(screen)
+        pygame.display.flip()
 
-    def run(self):
-        running = True
-        while running:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
+    pygame.quit()
 
-                if self.state == self.STATE_GAME:
-                    self.handle_events(event)
-
-            if self.state == self.STATE_MENU:
-                self.draw_menu()
-            elif self.state == self.STATE_GAME:
-                self.draw_game()
-            elif self.state == self.STATE_COMPLETE:
-                self.draw_complete()
-
-            pygame.display.update()
-        pygame.quit()
+    # --- FINALIZARE: LANSEAZA MAINFRAME ---
+    if next_action == "mainframe":
+        try:
+            subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "MainFrame.py")])
+        except Exception as e:
+            print(f"Eroare lansare MainFrame: {e}")
+    sys.exit()
 
 
 if __name__ == "__main__":
-    IEGame().run()
+    run_game()

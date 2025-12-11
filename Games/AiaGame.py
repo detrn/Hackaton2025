@@ -4,29 +4,49 @@ import time
 import csv
 import os
 import random
+import subprocess
 
-# --- 1. CONFIGURARE JUCĂTOR (Argumente din Panel) ---
-# Verificăm dacă primim argumentele din aplicație
+# --- 1. CONFIGURARE (FĂRĂ ID) ---
 if len(sys.argv) > 3:
-    player_name = sys.argv[1]
-    player_avatar = sys.argv[2]
-    player_spec = sys.argv[3]
+    PLAYER_NAME = sys.argv[1]
+    PLAYER_AVATAR = sys.argv[2]
+    PLAYER_SPEC = sys.argv[3]
 else:
-    # Valori default pentru testare manuală
-    player_name = "PlayerTest"
-    # Cale relativă pentru avatar default
+    PLAYER_NAME = "TestPlayer"
     base_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(base_dir)
-    player_avatar = os.path.join(project_root, "asset", "avatar_downloaded.png")
-    player_spec = "AIA"
+    PLAYER_AVATAR = os.path.join(project_root, "asset", "avatar_downloaded.png")
+    PLAYER_SPEC = "AIA"
 
-# --- 2. CONFIGURARE PYGAME ---
+
+# --- 2. SALVARE CSV ---
+def save_score_csv(nume, avatar, specializare, punctaj):
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    filename = os.path.join(current_dir, "database.csv")
+    try:
+        file_exists = os.path.isfile(filename)
+        with open(filename, mode='a', newline='', encoding='utf-8') as f:
+            fieldnames = ["Nume", "Avatar", "Specializare", "Punctaj"]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow({
+                "Nume": nume,
+                "Avatar": avatar,
+                "Specializare": specializare,
+                "Punctaj": punctaj
+            })
+    except Exception as e:
+        print(f"Eroare CSV: {e}")
+
+
+# --- 3. CONFIGURARE PYGAME ---
 pygame.init()
 WIDTH, HEIGHT = 900, 600
 SCREEN = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption(f"Logica ({player_spec}) - Jucator: {player_name}")
+pygame.display.set_caption(f"AIA Logic - Jucător: {PLAYER_NAME}")
 
-# Culori
+# CULORI
 BLACK = (20, 20, 25)
 WHITE = (230, 230, 230)
 GREEN_ON = (50, 255, 50)
@@ -40,37 +60,7 @@ FONT = pygame.font.SysFont('consolas', 24, bold=True)
 BIG_FONT = pygame.font.SysFont('consolas', 40, bold=True)
 
 
-# --- 3. FUNCȚIA DE SALVARE ÎN CSV ---
-def save_score_csv(nume, avatar, specializare, punctaj):
-    # Calculăm calea absolută către database.csv din folderul curent (Games)
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    filename = os.path.join(current_dir, "database.csv")
-    file_exists = os.path.isfile(filename)
-
-    try:
-        with open(filename, mode='a', newline='', encoding='utf-8') as f:
-            # Definim coloanele (inclusiv Specializare)
-            fieldnames = ["Nume", "Avatar", "Specializare", "Punctaj"]
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-
-            # Dacă fișierul nu există, scriem antetul
-            if not file_exists:
-                writer.writeheader()
-
-            # Scriem datele jucătorului
-            writer.writerow({
-                "Nume": nume,
-                "Avatar": avatar,
-                "Specializare": specializare,
-                "Punctaj": punctaj
-            })
-            print(f"[SUCCES] Scorul lui {nume} ({punctaj}) a fost salvat!")
-
-    except Exception as e:
-        print(f"[EROARE] Nu am putut salva in CSV: {e}")
-
-
-# --- 4. CLASE JOC ---
+# --- CLASE ---
 class Switch:
     def __init__(self, x, y, label):
         self.rect = pygame.Rect(x, y, 60, 60)
@@ -84,10 +74,8 @@ class Switch:
         color = GREEN_ON if self.state else RED_OFF
         pygame.draw.rect(surface, color, self.rect, border_radius=8)
         pygame.draw.rect(surface, WHITE, self.rect, 2, border_radius=8)
-
         val_text = FONT.render(str(self.state), True, BLACK if self.state else WHITE)
         surface.blit(val_text, val_text.get_rect(center=self.rect.center))
-
         lbl_text = FONT.render(self.label, True, GRAY)
         surface.blit(lbl_text, (self.rect.x, self.rect.y - 25))
 
@@ -104,11 +92,8 @@ class Gate:
     def randomize_type(self):
         self.type_idx = random.randint(0, len(self.types) - 1)
 
-    def get_type(self):
-        return self.types[self.type_idx]
-
     def process(self, in1, in2):
-        t = self.get_type()
+        t = self.types[self.type_idx]
         if t == "AND":
             return in1 & in2
         elif t == "OR":
@@ -122,7 +107,7 @@ class Gate:
     def draw(self, surface):
         pygame.draw.rect(surface, DARK_BLUE, self.rect, border_radius=5)
         pygame.draw.rect(surface, WIRE_COLOR, self.rect, 2, border_radius=5)
-        text = FONT.render(self.get_type(), True, WIRE_COLOR)
+        text = FONT.render(self.types[self.type_idx], True, WIRE_COLOR)
         surface.blit(text, text.get_rect(center=self.rect.center))
 
 
@@ -134,79 +119,70 @@ class Bulb:
     def draw(self, surface):
         if self.state:
             pygame.draw.circle(surface, (50, 255, 50, 120), self.rect.center, 45)
-
         color = GREEN_ON if self.state else (40, 0, 0)
         pygame.draw.circle(surface, color, self.rect.center, 25)
         pygame.draw.circle(surface, WHITE, self.rect.center, 25, 3)
-        lbl = FONT.render("OUT", True, WIRE_COLOR)
-        surface.blit(lbl, (self.rect.x + 10, self.rect.y - 30))
 
 
-# --- 5. INITIALIZARE OBIECTE ---
+# --- SETUP ---
 switches = [Switch(100, 150, "A"), Switch(100, 250, "B"), Switch(100, 350, "C"), Switch(100, 450, "D")]
 gates = [Gate(350, 200), Gate(350, 400), Gate(600, 300)]
 bulb = Bulb(800, 300)
 
 
-# Funcție helper desenare fire
 def draw_wire(start_rect, end_pos):
     mid_x = (start_rect.right + end_pos[0]) // 2
     pts = [start_rect.midright, (mid_x, start_rect.centery), (mid_x, end_pos[1]), end_pos]
     pygame.draw.lines(SCREEN, WIRE_COLOR, False, pts, 3)
 
 
-# --- 6. GENERARE NIVEL VALID (Start Stins) ---
 def calculate_circuit():
     r1 = gates[0].process(switches[0].state, switches[1].state)
     r2 = gates[1].process(switches[2].state, switches[3].state)
     return gates[2].process(r1, r2)
 
 
-attempts = 0
+# Generare nivel valid
 while True:
-    attempts += 1
     for g in gates: g.randomize_type()
     for s in switches: s.randomize()
     if calculate_circuit() == 0:
         bulb.state = 0
         break
-print(f"Joc generat dupa {attempts} incercari.")
 
-# --- 7. GAME LOOP ---
+# --- MAIN LOOP ---
 MAX_SCORE = 5000
 start_time = time.time()
-clicks = 0
 game_over = False
-final_score = 0
-saved_to_db = False  # Flag ca să salvăm o singură dată
+score_saved = False
+next_action = None
+clicks = 0
+current_score = 5000  # Inițializare scor
+time_left = 60  # Inițializare timp
 
-clock = pygame.time.Clock()
 running = True
-
 while running:
     SCREEN.fill(BLACK)
-    current_time = time.time()
 
-    # Logică circuit
-    bulb.state = calculate_circuit()
-
-    # Calcul scor
+    # --- LOGICA DE JOC (Se oprește dacă e Game Over) ---
     if not game_over:
-        elapsed = int(current_time - start_time)
-        current_score = MAX_SCORE - (elapsed * 5) - (clicks * 50)
+        elapsed = time.time() - start_time
+        time_left = max(0, 60 - elapsed)
+
+        # Calcul scor dinamic
+        current_score = int(MAX_SCORE - (elapsed * 50) - (clicks * 50))
         if current_score < 0: current_score = 0
 
-        # Verificare victorie
+        # Verificare circuit
+        bulb.state = calculate_circuit()
+
+        # Conditii STOP JOC
         if bulb.state == 1:
-            game_over = True
-            final_score = current_score
+            game_over = True  # Victorie -> Scorul îngheață aici
+        if time_left <= 0:
+            game_over = True  # Timp expirat
 
-    # SALVARE AUTOMATĂ (Se execută o singură dată când câștigi)
-    if game_over and not saved_to_db:
-        save_score_csv(player_name, player_avatar, player_spec, final_score)
-        saved_to_db = True
-
-    # Evenimente
+    # --- EVENIMENTE ---
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -218,12 +194,11 @@ while running:
                         sw.toggle()
                         clicks += 1
             else:
-                # Dacă jocul e gata (Game Over), click oriunde închide jocul
-                # Acest lucru permite întoarcerea la aplicația principală
+                # Daca jocul e gata, click oriunde duce la MainFrame
+                next_action = "mainframe"
                 running = False
 
-    # Desenare
-    # Fire
+    # --- DESENARE ---
     draw_wire(switches[0].rect, (gates[0].rect.x, gates[0].rect.y + 15))
     draw_wire(switches[1].rect, (gates[0].rect.x, gates[0].rect.y + 45))
     draw_wire(switches[2].rect, (gates[1].rect.x, gates[1].rect.y + 15))
@@ -232,38 +207,44 @@ while running:
     draw_wire(gates[1].rect, (gates[2].rect.x, gates[2].rect.y + 45))
     draw_wire(gates[2].rect, bulb.rect.center)
 
-    # Componente
     for obj in switches + gates: obj.draw(SCREEN)
     bulb.draw(SCREEN)
 
-    # HUD
-    score_col = WHITE if current_score > 3000 else RED_OFF
-    sc_txt = BIG_FONT.render(f"SCOR: {current_score}", True, score_col)
-    SCREEN.blit(sc_txt, (WIDTH - 300, 20))
+    # UI (Afișează scorul înghețat dacă game_over e True)
+    SCREEN.blit(BIG_FONT.render(f"SCOR: {current_score}", True, WHITE), (WIDTH - 300, 20))
 
-    stats = FONT.render(f"Spec: {player_spec} | Moves: {clicks}", True, GRAY)
-    SCREEN.blit(stats, (20, 20))
+    col_time = WHITE if time_left > 10 else RED_OFF
+    SCREEN.blit(FONT.render(f"TIMP: {int(time_left)}s", True, col_time), (20, 20))
 
-    # Game Over Screen
     if game_over:
+        if not score_saved:
+            save_score_csv(PLAYER_NAME, PLAYER_AVATAR, PLAYER_SPEC, current_score)
+            score_saved = True
+
         s = pygame.Surface((WIDTH, HEIGHT))
-        s.set_alpha(200)
+        s.set_alpha(200);
         s.fill(BLACK)
         SCREEN.blit(s, (0, 0))
 
-        t1 = BIG_FONT.render("CIRCUIT ACTIVAT!", True, GOLD)
-        t2 = FONT.render(f"Bravo, {player_name}!", True, WHITE)
-        t3 = FONT.render(f"Scor Final: {final_score}", True, GREEN_ON)
-        t4 = FONT.render("Click oriunde pentru a continua...", True, GRAY)
+        txt = "CIRCUIT REUSIT!" if bulb.state == 1 else "TIMP EXPIRAT!"
+        col = GOLD if bulb.state == 1 else RED_OFF
 
-        cx, cy = WIDTH // 2, HEIGHT // 2
-        SCREEN.blit(t1, t1.get_rect(center=(cx, cy - 60)))
-        SCREEN.blit(t2, t2.get_rect(center=(cx, cy)))
-        SCREEN.blit(t3, t3.get_rect(center=(cx, cy + 50)))
-        SCREEN.blit(t4, t4.get_rect(center=(cx, cy + 100)))
+        t1 = BIG_FONT.render(txt, True, col)
+        t2 = FONT.render(f"Scor Final: {current_score}", True, WHITE)
+        t3 = FONT.render("Click oriunde pentru Clasament", True, GRAY)
+
+        SCREEN.blit(t1, t1.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50)))
+        SCREEN.blit(t2, t2.get_rect(center=(WIDTH // 2, HEIGHT // 2)))
+        SCREEN.blit(t3, t3.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 50)))
 
     pygame.display.flip()
-    clock.tick(30)
+    pygame.time.Clock().tick(30)
 
+# --- FINALIZARE ---
 pygame.quit()
+if next_action == "mainframe":
+    try:
+        subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "MainFrame.py")])
+    except Exception as e:
+        print(f"Eroare lansare MainFrame: {e}")
 sys.exit()
