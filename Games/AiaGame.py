@@ -5,32 +5,26 @@ import csv
 import os
 import random
 
-# --- 1. CONFIGURARE JOCTOR (Input în consolă) ---
-print("--- AUTOMATICA LOGIC PUZZLE ---")
-player_name = input("Introdu Numele Jucatorului: ").strip()
-if not player_name: player_name = "Player1"
-
-print(f"Salut {player_name}! Alege un avatar.")
-print("Exemple: admin.png, archer.png, rogue.png, paladin.png, zombie.png")
-avatar_input = input("Nume fisier avatar (default: admin.png): ").strip()
-
-# Asigurăm calea corectă pentru avatar (să fie compatibil cu leaderboard-ul)
-if not avatar_input:
-    player_avatar = "img/admin.png"
+# --- 1. CONFIGURARE JUCĂTOR (Argumente din Panel) ---
+# Verificăm dacă primim argumentele din aplicație
+if len(sys.argv) > 3:
+    player_name = sys.argv[1]
+    player_avatar = sys.argv[2]
+    player_spec = sys.argv[3]
 else:
-    # Dacă userul scrie doar "archer", adăugăm extensia și folderul
-    if not avatar_input.endswith(".png") and not avatar_input.endswith(".jpg"):
-        avatar_input += ".png"
-    if not avatar_input.startswith("img/"):
-        player_avatar = f"img/{avatar_input}"
-    else:
-        player_avatar = avatar_input
+    # Valori default pentru testare manuală
+    player_name = "PlayerTest"
+    # Cale relativă pentru avatar default
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(base_dir)
+    player_avatar = os.path.join(project_root, "asset", "avatar_downloaded.png")
+    player_spec = "AIA"
 
 # --- 2. CONFIGURARE PYGAME ---
 pygame.init()
 WIDTH, HEIGHT = 900, 600
 SCREEN = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption(f"Logica - Jucator: {player_name}")
+pygame.display.set_caption(f"Logica ({player_spec}) - Jucator: {player_name}")
 
 # Culori
 BLACK = (20, 20, 25)
@@ -47,18 +41,19 @@ BIG_FONT = pygame.font.SysFont('consolas', 40, bold=True)
 
 
 # --- 3. FUNCȚIA DE SALVARE ÎN CSV ---
-def save_score_csv(nume, avatar, punctaj):
-    filename = "database.csv"
+def save_score_csv(nume, avatar, specializare, punctaj):
+    # Calculăm calea absolută către database.csv din folderul curent (Games)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    filename = os.path.join(current_dir, "database.csv")
     file_exists = os.path.isfile(filename)
 
     try:
-        # Deschidem cu 'a' (append) pentru a adăuga la final, nu a suprascrie
         with open(filename, mode='a', newline='', encoding='utf-8') as f:
-            # Definim coloanele exact ca în Leaderboard
-            fieldnames = ["Nume", "Avatar", "Punctaj"]
+            # Definim coloanele (inclusiv Specializare)
+            fieldnames = ["Nume", "Avatar", "Specializare", "Punctaj"]
             writer = csv.DictWriter(f, fieldnames=fieldnames)
 
-            # Dacă fișierul nu există, scriem antetul (Header-ul)
+            # Dacă fișierul nu există, scriem antetul
             if not file_exists:
                 writer.writeheader()
 
@@ -66,12 +61,13 @@ def save_score_csv(nume, avatar, punctaj):
             writer.writerow({
                 "Nume": nume,
                 "Avatar": avatar,
+                "Specializare": specializare,
                 "Punctaj": punctaj
             })
-            print(f"\n[SUCCES] Scorul lui {nume} ({punctaj}) a fost salvat in {filename}!")
+            print(f"[SUCCES] Scorul lui {nume} ({punctaj}) a fost salvat!")
 
     except Exception as e:
-        print(f"\n[EROARE] Nu am putut salva in CSV: {e}")
+        print(f"[EROARE] Nu am putut salva in CSV: {e}")
 
 
 # --- 4. CLASE JOC ---
@@ -207,7 +203,7 @@ while running:
 
     # SALVARE AUTOMATĂ (Se execută o singură dată când câștigi)
     if game_over and not saved_to_db:
-        save_score_csv(player_name, player_avatar, final_score)
+        save_score_csv(player_name, player_avatar, player_spec, final_score)
         saved_to_db = True
 
     # Evenimente
@@ -222,7 +218,8 @@ while running:
                         sw.toggle()
                         clicks += 1
             else:
-                # Dacă jocul e gata, click oriunde închide jocul
+                # Dacă jocul e gata (Game Over), click oriunde închide jocul
+                # Acest lucru permite întoarcerea la aplicația principală
                 running = False
 
     # Desenare
@@ -244,7 +241,7 @@ while running:
     sc_txt = BIG_FONT.render(f"SCOR: {current_score}", True, score_col)
     SCREEN.blit(sc_txt, (WIDTH - 300, 20))
 
-    stats = FONT.render(f"Moves: {clicks} | Time: {int(current_time - start_time)}s", True, GRAY)
+    stats = FONT.render(f"Spec: {player_spec} | Moves: {clicks}", True, GRAY)
     SCREEN.blit(stats, (20, 20))
 
     # Game Over Screen
@@ -257,7 +254,7 @@ while running:
         t1 = BIG_FONT.render("CIRCUIT ACTIVAT!", True, GOLD)
         t2 = FONT.render(f"Bravo, {player_name}!", True, WHITE)
         t3 = FONT.render(f"Scor Final: {final_score}", True, GREEN_ON)
-        t4 = FONT.render("Click pentru a iesi", True, GRAY)
+        t4 = FONT.render("Click oriunde pentru a continua...", True, GRAY)
 
         cx, cy = WIDTH // 2, HEIGHT // 2
         SCREEN.blit(t1, t1.get_rect(center=(cx, cy - 60)))
