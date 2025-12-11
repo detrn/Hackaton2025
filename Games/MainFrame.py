@@ -1,132 +1,203 @@
 import sys
 import csv
 import os
-from PyQt5 import QtWidgets, uic, QtCore, QtGui
-from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon
+from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap
 
 
 class LeaderboardWindow(QtWidgets.QMainWindow):
+    # Semnal: Când se închide, anunță Panelul
+    go_back_signal = QtCore.pyqtSignal()
+
     def __init__(self):
         super().__init__()
 
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        self.ui_path = os.path.join(base_dir, "LeaderBoard.ui")
-        self.db_path = os.path.join(base_dir, "database.csv")
-        self.css_path = os.path.join(base_dir, "style.qss")
+        # --- 1. CONFIGURARE CĂI ---
+        self.games_dir = os.path.dirname(os.path.abspath(__file__))
+        self.root_dir = os.path.dirname(self.games_dir)  # Folderul mare al proiectului
 
+        self.ui_path = os.path.join(self.games_dir, "LeaderBoard.ui")
+        self.db_path = os.path.join(self.games_dir, "database.csv")
+        self.css_path = os.path.join(self.games_dir, "style.qss")
+
+        # --- 2. ÎNCĂRCARE UI ---
         try:
             if os.path.exists(self.ui_path):
+                from PyQt5 import uic
                 uic.loadUi(self.ui_path, self)
+                # Conectăm butoanele
+                if hasattr(self, 'pushButton'): self.pushButton.clicked.connect(self.go_back)
+                if hasattr(self, 'btnClose'): self.btnClose.clicked.connect(self.go_back)
+                if hasattr(self, 'commandLinkButton'): self.commandLinkButton.clicked.connect(self.go_back)
             else:
-                self.tableView = QtWidgets.QTableView()
-                self.setCentralWidget(self.tableView)
-                self.resize(600, 500)
-                print(f"EROARE: Nu găsesc {self.ui_path}")
+                self.setup_fallback_ui()
         except Exception as e:
-            print(f"Eroare UI: {e}")
+            print(f"Eroare încărcare UI: {e}")
+            self.setup_fallback_ui()
 
         self.setWindowTitle("Clasament General")
 
+        # Încărcare stil
+        if os.path.exists(self.css_path):
+            with open(self.css_path, "r") as f:
+                self.setStyleSheet(f.read())
 
-        if hasattr(self, 'pushButton'):
-            self.pushButton.clicked.connect(self.close)
-
-        if hasattr(self, 'commandLinkButton'):
-            self.commandLinkButton.clicked.connect(self.close)
-        elif hasattr(self, 'btnClose'):
-            self.btnClose.clicked.connect(self.close)
-
-        self.load_stylesheet()
         self.load_data()
+
+    def setup_fallback_ui(self):
+        cw = QtWidgets.QWidget()
+        self.setCentralWidget(cw)
+        layout = QtWidgets.QVBoxLayout(cw)
+
+        lbl = QtWidgets.QLabel("CLASAMENT")
+        lbl.setAlignment(QtCore.Qt.AlignCenter)
+        lbl.setStyleSheet("font-size: 24px; font-weight: bold;")
+        layout.addWidget(lbl)
+
+        self.tableView = QtWidgets.QTableView()
+        layout.addWidget(self.tableView)
+
+        self.btnBack = QtWidgets.QPushButton("⬅ Înapoi")
+        self.btnBack.setMinimumHeight(50)
+        self.btnBack.clicked.connect(self.go_back)
+        layout.addWidget(self.btnBack)
+
+        self.resize(900, 600)
+
+    def go_back(self):
+        self.close()
+        self.go_back_signal.emit()
 
     def load_data(self):
         players_map = {}
 
         if not os.path.exists(self.db_path):
-            QtWidgets.QMessageBox.warning(self, "Eroare", "Nu găsesc database.csv")
+            print("Baza de date nu există.")
             return
 
         try:
             with open(self.db_path, mode='r', encoding='utf-8-sig') as f:
                 reader = csv.DictReader(f)
-
                 for row in reader:
-                    # Curățăm datele de spații
-                    row = {k.strip(): v for k, v in row.items() if k}
-
                     if "Nume" not in row: continue
 
-                    nume = row["Nume"]
-
+                    nume = row["Nume"].strip()
                     raw_avatar = row.get("Avatar", "").strip()
-                    if raw_avatar and not os.path.isabs(raw_avatar):
-                        avatar_full_path = os.path.join(os.path.dirname(self.db_path), raw_avatar)
-                    else:
-                        avatar_full_path = raw_avatar
-
+                    spec = row.get("Specializare", "N/A").strip()
                     try:
                         punctaj = int(row.get("Punctaj", 0))
-                    except ValueError:
+                    except:
                         punctaj = 0
 
+                    # Logică High Score
                     if nume in players_map:
                         if punctaj > players_map[nume]["punctaj"]:
-                            players_map[nume] = {"avatar": avatar_full_path, "punctaj": punctaj}
+                            players_map[nume] = {"avatar": raw_avatar, "spec": spec, "punctaj": punctaj}
                     else:
-                        players_map[nume] = {"avatar": avatar_full_path, "punctaj": punctaj}
+                        players_map[nume] = {"avatar": raw_avatar, "spec": spec, "punctaj": punctaj}
 
         except Exception as e:
             print(f"Eroare citire CSV: {e}")
-            return
 
-        sorted_players = sorted(
-            players_map.items(),
-            key=lambda item: item[1]['punctaj'],
-            reverse=True
-        )
+        # Sortare
+        sorted_players = sorted(players_map.items(), key=lambda x: x[1]['punctaj'], reverse=True)
+        self.display_table(sorted_players)
 
-        self.display_in_table(sorted_players)
-
-    def display_in_table(self, top_list):
+    def display_table(self, data):
         if not hasattr(self, 'tableView'): return
 
-        headers = ["Loc", "Avatar", "Nume", "Punctaj"]
-        model = QStandardItemModel(len(top_list), len(headers))
+        headers = ["Loc", "Avatar", "Nume", "Specializare", "Punctaj"]
+        model = QStandardItemModel(len(data), len(headers))
         model.setHorizontalHeaderLabels(headers)
-        self.tableView.setIconSize(QtCore.QSize(40, 40))
 
-        for i, (nume, data) in enumerate(top_list):
-            # Loc
-            item_rank = QStandardItem(str(i + 1))
-            item_rank.setTextAlignment(QtCore.Qt.AlignCenter)
-            model.setItem(i, 0, item_rank)
+        # Mărim iconițele să se vadă bine
+        self.tableView.setIconSize(QtCore.QSize(60, 60))
+        self.tableView.verticalHeader().setVisible(False)
+        # Facem rândurile mai înalte
+        self.tableView.verticalHeader().setDefaultSectionSize(70)
+        self.tableView.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
-            # Avatar
+        for i, (nume, info) in enumerate(data):
+            # 0. Loc
+            item_loc = QStandardItem(str(i + 1))
+            item_loc.setTextAlignment(QtCore.Qt.AlignCenter)
+            model.setItem(i, 0, item_loc)
+
+            # 1. Avatar (FIXAT PENTRU AFIȘARE CORECTĂ)
             item_avatar = QStandardItem()
-            if os.path.exists(data["avatar"]):
-                item_avatar.setIcon(QIcon(data["avatar"]))
-            else:
+
+            # Încercăm să reparăm calea dacă e relativă
+            avatar_path = info['avatar']
+
+            # Verificăm 2 scenarii: Cale absolută sau Cale relativă la Root
+            possible_paths = [
+                avatar_path,  # Cale absolută
+                os.path.join(self.root_dir, avatar_path),  # Root/asset/...
+                os.path.join(self.games_dir, avatar_path)  # Games/img/...
+            ]
+
+            found_icon = False
+            for path in possible_paths:
+                if os.path.exists(path):
+                    # Încărcăm imaginea, o facem pătrată și o punem în icon
+                    pixmap = QPixmap(path)
+                    # O scalăm să arate bine
+                    pixmap = pixmap.scaled(60, 60, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                    item_avatar.setIcon(QIcon(pixmap))
+                    found_icon = True
+                    break
+
+            if not found_icon:
                 item_avatar.setText("No Img")
+
             model.setItem(i, 1, item_avatar)
 
-            model.setItem(i, 2, QStandardItem(nume))
+            # 2. Nume
+            item_nume = QStandardItem(nume)
+            item_nume.setTextAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
+            font_nume = item_nume.font()
+            font_nume.setPointSize(12)
+            item_nume.setFont(font_nume)
+            model.setItem(i, 2, item_nume)
 
-            item_score = QStandardItem(str(data["punctaj"]))
+            # 3. Specializare
+            item_spec = QStandardItem(info['spec'])
+            item_spec.setTextAlignment(QtCore.Qt.AlignCenter)
+            font_spec = item_spec.font()
+            font_spec.setBold(True)
+            item_spec.setFont(font_spec)
+
+            # Culori specifice
+            if info['spec'] == "AIA":
+                item_spec.setForeground(QtGui.QColor("#2980b9"))
+            elif info['spec'] == "IE":
+                item_spec.setForeground(QtGui.QColor("#d35400"))
+            elif info['spec'] == "IEC":
+                item_spec.setForeground(QtGui.QColor("#8e44ad"))
+            elif info['spec'] == "IETTI":
+                item_spec.setForeground(QtGui.QColor("#16a085"))
+
+            model.setItem(i, 3, item_spec)
+
+            # 4. Punctaj
+            item_score = QStandardItem(str(info['punctaj']))
             item_score.setTextAlignment(QtCore.Qt.AlignCenter)
-            font = item_score.font();
-            font.setBold(True)
-            item_score.setFont(font)
-            model.setItem(i, 3, item_score)
+            font_score = item_score.font()
+            font_score.setBold(True)
+            font_score.setPointSize(14)
+            item_score.setFont(font_score)
+            model.setItem(i, 4, item_score)
 
         self.tableView.setModel(model)
-        self.tableView.verticalHeader().setVisible(False)
-        self.tableView.setColumnWidth(1, 60)
-        self.tableView.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
 
-    def load_stylesheet(self):
-        if os.path.exists(self.css_path):
-            with open(self.css_path, "r") as f:
-                self.setStyleSheet(f.read())
+        # Ajustări lățime coloane
+        self.tableView.setColumnWidth(0, 50)  # Loc
+        self.tableView.setColumnWidth(1, 80)  # Avatar
+        self.tableView.setColumnWidth(3, 120)  # Spec
+        self.tableView.setColumnWidth(4, 100)  # Scor
+
+        # Numele ia restul locului
+        self.tableView.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
 
 
 if __name__ == '__main__':
