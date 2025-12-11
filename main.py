@@ -1,59 +1,83 @@
 import sys
-import cv2
-from PyQt5.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMainWindow, QSplitter, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, QTimer
 
-# Aici importăm clasele tale din celelalte fișiere
-from avatar_generator import AvatarGenerator
 from camera import Camera
+from Hackaton2025.panelCamera import PanelCamera
+from Hackaton2025.panelDreapta import PanelDreapta
+from Hackaton2025.panelJocuri import PanelJocuri
 
 
-def main():
-    # 1. Inițializare QApplication (Obligatoriu pentru PyQt5)
-    app = QApplication(sys.argv)
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Aplicatie facultate")
+        self.resize(1200, 800)  # O dimensiune de start mai generoasă
 
-    print("--- TESTARE AVATAR ---")
-    # Generăm un avatar
-    # Fără argumente -> intră pe ramura random.randint
-    pixmap = AvatarGenerator.generate()
+        # --- Camera ---
+        self.camera = Camera()
+        self.camera_panel = PanelCamera(self.camera)
 
-    if pixmap:
-        print("Avatar generat cu succes! (Obiect QPixmap creat)")
-        # Aici l-ai pune într-un QLabel: label.setPixmap(pixmap)
-    else:
-        print("Eroare la generarea avatarului.")
+        # Conectăm semnalul de zâmbet
+        self.camera_panel.smile_detected.connect(self.load_game_panel)
 
-    print("\n--- TESTARE CAMERA ---")
-    print("Apasă 'q' pentru a ieși.")
+        # --- Panel dreapta modular (Start) ---
+        self.right_panel = PanelDreapta()
+        # Conectăm și butonul manual (backup)
+        self.right_panel.start_clicked.connect(self.load_game_panel)
 
-    # Inițializăm camera
-    cam = Camera()
+        # --- Splitter ---
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.addWidget(self.camera_panel)
+        self.splitter.addWidget(self.right_panel)
 
-    while True:
-        # Luăm un cadru
-        frame = cam.get_frame()
+        # MODIFICARE LĂȚIME:
+        self.splitter.setStretchFactor(0, 4)  # Camera
+        self.splitter.setStretchFactor(1, 5)  # Panel Dreapta
 
-        if frame is not None:
-            # Detectăm zâmbetul
-            zambeste, frame_procesat = cam.detect_smile(frame)
+        # Dimensiuni inițiale
+        self.splitter.setSizes([500, 700])
 
-            if zambeste:
-                cv2.putText(frame_procesat, "ZAMBESTE! :)", (50, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        container = QWidget()
+        layout = QVBoxLayout()
+        layout.addWidget(self.splitter)
+        container.setLayout(layout)
+        self.setCentralWidget(container)
 
-            # Afișăm fereastra (folosind OpenCV pentru simplitate aici)
-            cv2.imshow('Camera Feed', frame_procesat)
+        # Timer refresh
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.refresh)
+        self.timer.start(30)
 
-        # Ieșire cu tasta 'q'
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+    def refresh(self):
+        self.camera_panel.update_frame()
+        self.camera_panel.overlay.update()
 
-    # Curățăm resursele
-    cam.release()
-    cv2.destroyAllWindows()
-    sys.exit()
+    def load_game_panel(self):
+        # Verificăm dacă nu cumva am încărcat deja panelul de jocuri
+        if isinstance(self.right_panel, PanelJocuri):
+            return
+
+        print("Trecere la Panel Jocuri...")
+        game_panel = PanelJocuri()
+        self.splitter.replaceWidget(1, game_panel)
+        game_panel.close_main_window.connect(self.close)
+
+        self.right_panel.setParent(None)
+        self.right_panel.deleteLater()
+        self.right_panel = game_panel
+
+        # Păstrăm proporțiile și după schimbare
+        self.splitter.setSizes([500, self.width() - 500])
+
+
+    def closeEvent(self, event):
+        self.camera.release()
+        event.accept()
 
 
 if __name__ == "__main__":
-    main()
-
-
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.showMaximized()
+    sys.exit(app.exec())

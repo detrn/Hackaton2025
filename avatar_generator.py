@@ -1,13 +1,18 @@
+import datetime
 import random
 import requests
-import os  # <--- 1. Importam os (optional, dar bun pentru verificari)
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush
-from PyQt5.QtCore import Qt
+import os
+from PyQt6.QtGui import QImage, QPixmap, QPainter, QBrush
+from PyQt6.QtCore import Qt
 
 
 class AvatarGenerator:
     @staticmethod
     def generate(seed=None):
+        # Asigurăm existența folderului 'asset'
+        if not os.path.exists("asset"):
+            os.makedirs("asset")
+
         if seed is None:
             seed = random.randint(1, 999999)
 
@@ -22,37 +27,30 @@ class AvatarGenerator:
             image.loadFromData(response.content)
 
             size = 400
-            image = image.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            # În PyQt6, parametrii sunt la fel, doar că KeepAspectRatio e din QtCore.Qt
+            image = image.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
             # Creăm imaginea rotundă
-            out_img = QImage(size, size, QImage.Format_ARGB32)
-            out_img.fill(Qt.transparent)
+            out_img = QImage(size, size, QImage.Format.Format_ARGB32)
+            out_img.fill(Qt.GlobalColor.transparent)
 
             brush = QBrush(image)
             painter = QPainter(out_img)
-            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setBrush(brush)
-            painter.setPen(Qt.NoPen)
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(0, 0, size, size)
             painter.end()
 
-            # =================================================
-            # PARTEA DE SALVARE ÎN FIȘIER
-            # =================================================
-            nume_fisier = "avatar_student.png"
+            # --- SALVARE ---
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            nume_fisier = f"asset/avatar_student_{timestamp}.png"
 
-            # Salvăm imaginea procesată (rotundă) pe disc
-            succes = out_img.save(nume_fisier, "PNG")
+            out_img.save(nume_fisier, "PNG")
 
-            if succes:
-                print(f"✅ Avatar salvat cu succes: {nume_fisier}")
-            else:
-                print("❌ Eroare la salvarea avatarului pe disc.")
-            # =================================================
-
-            return QPixmap.fromImage(out_img)
+            # Returnăm tuple: (QPixmap, calea_fisierului)
+            return QPixmap.fromImage(out_img), nume_fisier
 
         except Exception as e:
-            print(f"Eroare retea sau procesare avatar: {e}")
-            return None
-
+            print(f"Eroare avatar: {e}")
+            return None, None
