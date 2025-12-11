@@ -1,11 +1,11 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QSplitter, QVBoxLayout, QWidget
-from PyQt5.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QApplication, QMainWindow, QSplitter, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, QTimer
 
 from camera import Camera
-from GUI.panelCamera import PanelCamera
-from GUI.panelDreapta import PanelDreapta
-from GUI.panelJocuri import PanelJocuri
+from Hackaton2025.panelCamera import PanelCamera
+from Hackaton2025.panelDreapta import PanelDreapta
+from Hackaton2025.panelJocuri import PanelJocuri
 
 
 class MainWindow(QMainWindow):
@@ -27,18 +27,15 @@ class MainWindow(QMainWindow):
         self.right_panel.start_clicked.connect(self.load_game_panel)
 
         # --- Splitter ---
-        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.addWidget(self.camera_panel)
         self.splitter.addWidget(self.right_panel)
 
         # MODIFICARE LĂȚIME:
-        # Setăm Stretch Factor pentru a face camera mai lată.
-        # 1 vs 1 înseamnă că împart spațiul egal (50% - 50%).
-        # Dacă vrei camera mai mare decât panelul dreapta, pui 2 la 1.
         self.splitter.setStretchFactor(0, 4)  # Camera
         self.splitter.setStretchFactor(1, 5)  # Panel Dreapta
 
-        # Sau putem forța dimensiuni inițiale (Width Camera, Width Restul)
+        # Dimensiuni inițiale
         self.splitter.setSizes([500, 700])
 
         container = QWidget()

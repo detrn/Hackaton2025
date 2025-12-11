@@ -1,8 +1,8 @@
 import sys
 import csv
 import os
-from PyQt5 import QtWidgets, QtCore, QtGui
-from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap
+from PyQt6 import QtWidgets, QtCore, QtGui
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPixmap
 
 
 class LeaderboardWindow(QtWidgets.QMainWindow):
@@ -23,7 +23,7 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
         # --- 2. ÎNCĂRCARE UI ---
         try:
             if os.path.exists(self.ui_path):
-                from PyQt5 import uic
+                from PyQt6 import uic
                 uic.loadUi(self.ui_path, self)
                 # Conectăm butoanele dacă există
                 if hasattr(self, 'pushButton'): self.pushButton.clicked.connect(self.go_back)
@@ -50,7 +50,7 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QVBoxLayout(cw)
 
         lbl = QtWidgets.QLabel("CLASAMENT")
-        lbl.setAlignment(QtCore.Qt.AlignCenter)
+        lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         lbl.setStyleSheet("font-size: 24px; font-weight: bold;")
         layout.addWidget(lbl)
 
@@ -119,12 +119,12 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
         self.tableView.setIconSize(QtCore.QSize(60, 60))
         self.tableView.verticalHeader().setVisible(False)
         self.tableView.verticalHeader().setDefaultSectionSize(70)
-        self.tableView.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.tableView.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
 
         for i, info in enumerate(data):
             # 0. Loc
             item_loc = QStandardItem(str(i + 1))
-            item_loc.setTextAlignment(QtCore.Qt.AlignCenter)
+            item_loc.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             model.setItem(i, 0, item_loc)
 
             # 1. Avatar
@@ -138,7 +138,7 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
             found_icon = False
             for path in possible_paths:
                 if os.path.exists(path):
-                    pixmap = QPixmap(path).scaled(60, 60, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                    pixmap = QPixmap(path).scaled(60, 60, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
                     item_avatar.setIcon(QIcon(pixmap))
                     found_icon = True
                     break
@@ -148,7 +148,7 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
 
             # 2. Nume
             item_nume = QStandardItem(info['nume'])
-            item_nume.setTextAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
+            item_nume.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignVCenter | QtCore.Qt.AlignmentFlag.AlignLeft)
             font_nume = item_nume.font()
             font_nume.setPointSize(12)
             item_nume.setFont(font_nume)
@@ -156,7 +156,7 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
 
             # 3. Specializare
             item_spec = QStandardItem(info['spec'])
-            item_spec.setTextAlignment(QtCore.Qt.AlignCenter)
+            item_spec.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             font_spec = item_spec.font()
             font_spec.setBold(True)
             item_spec.setFont(font_spec)
@@ -175,7 +175,7 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
 
             # 4. Punctaj
             item_score = QStandardItem(str(info['punctaj']))
-            item_score.setTextAlignment(QtCore.Qt.AlignCenter)
+            item_score.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             font_score = item_score.font()
             font_score.setBold(True)
             font_score.setPointSize(14)
@@ -189,11 +189,11 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
         self.tableView.setColumnWidth(1, 80)  # Avatar
         self.tableView.setColumnWidth(3, 120)  # Specializare
         self.tableView.setColumnWidth(4, 100)  # Punctaj
-        self.tableView.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)  # Nume ia restul spațiului
+        self.tableView.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.Stretch)  # Nume ia restul spațiului
 
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     window = LeaderboardWindow()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())

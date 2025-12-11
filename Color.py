@@ -1,5 +1,5 @@
-from PyQt5.QtGui import QColor, QPalette
-from PyQt5.QtWidgets import QWidget
+from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtWidgets import QWidget
 
 
 class Color(QWidget):
@@ -8,5 +8,6 @@ class Color(QWidget):
         self.setAutoFillBackground(True)
 
         palette = self.palette()
+        # PyQt6 folosește ColorRole.Window
         palette.setColor(QPalette.ColorRole.Window, QColor(color))
         self.setPalette(palette)

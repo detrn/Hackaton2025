@@ -2,8 +2,8 @@ import datetime
 import random
 import requests
 import os
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QBrush
-from PyQt5.QtCore import Qt
+from PyQt6.QtGui import QImage, QPixmap, QPainter, QBrush
+from PyQt6.QtCore import Qt
 
 
 class AvatarGenerator:
@@ -27,17 +27,18 @@ class AvatarGenerator:
             image.loadFromData(response.content)
 
             size = 400
-            image = image.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            # În PyQt6, parametrii sunt la fel, doar că KeepAspectRatio e din QtCore.Qt
+            image = image.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
             # Creăm imaginea rotundă
-            out_img = QImage(size, size, QImage.Format_ARGB32)
-            out_img.fill(Qt.transparent)
+            out_img = QImage(size, size, QImage.Format.Format_ARGB32)
+            out_img.fill(Qt.GlobalColor.transparent)
 
             brush = QBrush(image)
             painter = QPainter(out_img)
-            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             painter.setBrush(brush)
-            painter.setPen(Qt.NoPen)
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.drawEllipse(0, 0, size, size)
             painter.end()
 

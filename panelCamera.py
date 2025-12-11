@@ -1,6 +1,6 @@
-from PyQt5.QtWidgets import QWidget, QLabel
-from PyQt5.QtCore import Qt, pyqtSignal, QRect
-from PyQt5.QtGui import QPainter, QFont, QPixmap, QImage
+from PyQt6.QtWidgets import QWidget, QLabel
+from PyQt6.QtCore import Qt, pyqtSignal, QRect
+from PyQt6.QtGui import QPainter, QFont, QPixmap, QImage
 import cv2
 import numpy as np
 
@@ -8,9 +8,8 @@ import numpy as np
 class OverlayLabel(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        # Variabilă care decide dacă textul este vizibil
-        self.show_text = True
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.show_text = True  # Variabilă care decide dacă textul este vizibil
 
     def hide_text(self):
         """Ascunde textul și forțează redesenarea."""
@@ -18,34 +17,29 @@ class OverlayLabel(QLabel):
         self.update()
 
     def paintEvent(self, event):
-        # Dacă s-a cerut ascunderea textului, nu desenăm nimic
         if not self.show_text:
             return
 
         painter = QPainter(self)
-
-        # Setăm fontul și culoarea
-        font = QFont("Arial", 16, QFont.Bold)
+        font = QFont("Arial", 16, QFont.Weight.Bold)
         painter.setFont(font)
-        painter.setPen(Qt.green)
+        painter.setPen(Qt.GlobalColor.green)
 
-        # Desenăm textul în partea de jos a ecranului
         w, h = self.width(), self.height()
         text = "ZÂMBEȘTE la cameră pentru a începe! :)"
 
         text_rect = QRect(0, h - 100, w, 50)
-        painter.drawText(text_rect, Qt.AlignCenter, text)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, text)
 
 
 class PanelCamera(QWidget):
-    # Semnal emis când zâmbetul este detectat
-    smile_detected = pyqtSignal()
+    smile_detected = pyqtSignal()  # Semnal emis când zâmbetul este detectat
 
     def __init__(self, camera, parent=None):
         super().__init__(parent)
         self.camera = camera
         self.camera_label = QLabel(self)
-        self.camera_label.setAlignment(Qt.AlignCenter)
+        self.camera_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.camera_label.setStyleSheet("background-color: black;")
         self.camera_label.setScaledContents(True)
 
@@ -61,7 +55,6 @@ class PanelCamera(QWidget):
         self.overlay.setGeometry(0, 0, self.width(), self.height())
 
     def update_frame(self):
-        # Obținem cadrul brut
         raw_frame = self.camera.get_frame()
 
         if raw_frame is None:
@@ -71,7 +64,6 @@ class PanelCamera(QWidget):
 
         frame_to_display = raw_frame
 
-        # Procesăm doar dacă detecția este încă activă
         if self.detection_active:
             is_smiling, processed_frame = self.camera.detect_smile(raw_frame)
             frame_to_display = processed_frame
@@ -79,21 +71,12 @@ class PanelCamera(QWidget):
             if is_smiling:
                 self.smile_counter += 1
 
-                # Când atingem pragul de zâmbete consecutive
                 if self.smile_counter >= self.smile_threshold:
                     self.detection_active = False
-
-                    # --- MODIFICAREA ESTE AICI ---
-                    # Ascundem textul de pe overlay
                     self.overlay.hide_text()
-
-                    # Emitem semnalul pentru a schimba panoul din dreapta
                     self.smile_detected.emit()
             else:
                 self.smile_counter = 0
-
-                # Dacă detecția NU mai e activă, afișăm cadrul curat (raw_frame),
-        # fără pătrățele verzi/albastre pe față.
 
         self.display_image(frame_to_display)
 
@@ -101,7 +84,7 @@ class PanelCamera(QWidget):
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = frame_rgb.shape
         bytes_per_line = ch * w
-        qimage = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        qimage = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
 
         pixmap = QPixmap.fromImage(qimage)
         self.camera_label.setPixmap(pixmap)

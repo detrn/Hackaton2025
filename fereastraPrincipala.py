@@ -1,9 +1,9 @@
 # main.py
 import sys
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QSplitter, QVBoxLayout, QWidget
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer
 from camera import Camera
 from GUI.panelCamera import PanelCamera
 from GUI.panelDreapta import PanelDreapta
@@ -25,7 +25,7 @@ class MainWindow(QMainWindow):
         self.right_panel.start_button.clicked.connect(self.load_game_panel)
 
         # --- Splitter 1:3 ---
-        self.splitter = QSplitter(Qt.Horizontal)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.addWidget(self.camera_panel)
         self.splitter.addWidget(self.right_panel)
         self.splitter.setStretchFactor(0, 1)
