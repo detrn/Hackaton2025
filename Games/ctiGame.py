@@ -1,5 +1,8 @@
+import subprocess
 import sys
 import random
+import os
+import csv
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QLabel, QPushButton
 )
@@ -7,6 +10,48 @@ from PyQt5.QtWidgets import QGraphicsOpacityEffect
 
 from PyQt5.QtGui import QFont, QColor, QPainter, QPen
 from PyQt5.QtCore import Qt, QPropertyAnimation, QTimer
+
+# --- 1. CONFIGURARE (FĂRĂ ID) ---
+if len(sys.argv) > 3:
+    PLAYER_NAME = sys.argv[1]
+    PLAYER_AVATAR = sys.argv[2]
+    PLAYER_SPEC = sys.argv[3]
+else:
+    PLAYER_NAME = "TestPlayer"
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(base_dir)
+    PLAYER_AVATAR = os.path.join(project_root, "asset", "avatar_downloaded.png")
+    PLAYER_SPEC = "CTI"
+
+
+# --- 2. SALVARE CSV ---
+def save_score_csv(nume, avatar, specializare, punctaj):
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    filename = os.path.join(current_dir, "database.csv")
+    try:
+        file_exists = os.path.isfile(filename)
+        with open(filename, mode='a', newline='', encoding='utf-8') as f:
+            fieldnames = ["Nume", "Avatar", "Specializare", "Punctaj"]
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow({
+                "Nume": nume,
+                "Avatar": avatar,
+                "Specializare": specializare,
+                "Punctaj": punctaj
+            })
+    except Exception as e:
+        print(f"Eroare CSV: {e}")
+
+
+
+
+
+
+
+
+
 
 
 QUESTIONS = [
@@ -85,7 +130,7 @@ class QuizWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("CS Complexity Quiz")
-
+        self.leaderboard_btn = QPushButton("Mergi la Leaderboard")
         # Fundal
         self.bg = BackgroundGrid()
         self.bg.setParent(self)
@@ -253,6 +298,7 @@ class QuizWindow(QWidget):
         # ---- ECRAN FINAL ----
         # Titlu BigO Game
         title_label = QLabel("BigO Game")
+        print(self.score)
         title_label.setFont(QFont("Arial", 60, QFont.Bold))
         title_label.setAlignment(Qt.AlignCenter)
         title_label.setStyleSheet("color: #00FFFF; margin-bottom: 20px;")
@@ -291,15 +337,16 @@ class QuizWindow(QWidget):
 
         # Mesajul final cu scor
         finish_label = QLabel(f"Felicitări! Acesta este punctajul tău:\n{int(self.score)}")
+        save_score_csv("Ionut",PLAYER_AVATAR,PLAYER_SPEC,int(self.score))
         finish_label.setFont(QFont("Arial", 34, QFont.Bold))
         finish_label.setAlignment(Qt.AlignCenter)
         finish_label.setStyleSheet("color: white; margin-bottom: 40px;")
         self.layout.addWidget(finish_label)
 
         # Buton leaderboard
-        leaderboard_btn = QPushButton("Mergi la Leaderboard")
-        leaderboard_btn.setFont(QFont("Arial", 22))
-        leaderboard_btn.setStyleSheet("""
+
+        self.leaderboard_btn.setFont(QFont("Arial", 22))
+        self.leaderboard_btn.setStyleSheet("""
             QPushButton {
                 background-color: #2D7D9A;
                 padding: 18px;
@@ -308,11 +355,18 @@ class QuizWindow(QWidget):
             }
             QPushButton:hover { background-color: #389ABF; }
         """)
-        self.layout.addWidget(leaderboard_btn)
+        self.layout.addWidget(self.leaderboard_btn)
 
         self.update()
         self.repaint()
 
+        self.leaderboard_btn.clicked.connect(self.leaderboard_button_clicked)
+    def leaderboard_button_clicked(self):
+        QuizWindow.close(self)
+        try:
+            subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "leaderboard.py")])
+        except Exception as e:
+            print(f"Eroare lansare MainFrame: {e}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -207,7 +207,7 @@ spawn_timer = 0
 start_time = time.time()
 final_score = 0
 score_saved = False
-next_action = None  # Pentru a deschide MainFrame.py
+next_action = None  # Pentru a deschide leaderboard.py
 
 
 def reset_game():
@@ -363,7 +363,7 @@ while running:
 pygame.quit()
 if next_action == "mainframe":
     try:
-        subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "MainFrame.py")])
+        subprocess.Popen([sys.executable, os.path.join(os.path.dirname(__file__), "leaderboard.py")])
     except Exception as e:
         print(f"Eroare lansare MainFrame: {e}")
 sys.exit()

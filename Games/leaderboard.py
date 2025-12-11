@@ -25,7 +25,7 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
             if os.path.exists(self.ui_path):
                 from PyQt5 import uic
                 uic.loadUi(self.ui_path, self)
-                # Conectăm butoanele
+                # Conectăm butoanele dacă există
                 if hasattr(self, 'pushButton'): self.pushButton.clicked.connect(self.go_back)
                 if hasattr(self, 'btnClose'): self.btnClose.clicked.connect(self.go_back)
                 if hasattr(self, 'commandLinkButton'): self.commandLinkButton.clicked.connect(self.go_back)
@@ -69,7 +69,10 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
         self.go_back_signal.emit()
 
     def load_data(self):
-        players_map = {}
+        """
+        Încarcă toate intrările din CSV, fără a elimina duplicatele, și sortează descrescător după punctaj.
+        """
+        players_list = []
 
         if not os.path.exists(self.db_path):
             print("Baza de date nu există.")
@@ -79,7 +82,8 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
             with open(self.db_path, mode='r', encoding='utf-8-sig') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    if "Nume" not in row: continue
+                    if "Nume" not in row:
+                        continue
 
                     nume = row["Nume"].strip()
                     raw_avatar = row.get("Avatar", "").strip()
@@ -89,71 +93,61 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
                     except:
                         punctaj = 0
 
-                    # Logică High Score
-                    if nume in players_map:
-                        if punctaj > players_map[nume]["punctaj"]:
-                            players_map[nume] = {"avatar": raw_avatar, "spec": spec, "punctaj": punctaj}
-                    else:
-                        players_map[nume] = {"avatar": raw_avatar, "spec": spec, "punctaj": punctaj}
+                    players_list.append({
+                        "nume": nume,
+                        "avatar": raw_avatar,
+                        "spec": spec,
+                        "punctaj": punctaj
+                    })
 
         except Exception as e:
             print(f"Eroare citire CSV: {e}")
 
-        # Sortare
-        sorted_players = sorted(players_map.items(), key=lambda x: x[1]['punctaj'], reverse=True)
+        # Sortare descrescătoare după punctaj
+        sorted_players = sorted(players_list, key=lambda x: x['punctaj'], reverse=True)
         self.display_table(sorted_players)
 
     def display_table(self, data):
-        if not hasattr(self, 'tableView'): return
+        if not hasattr(self, 'tableView'):
+            return
 
         headers = ["Loc", "Avatar", "Nume", "Specializare", "Punctaj"]
         model = QStandardItemModel(len(data), len(headers))
         model.setHorizontalHeaderLabels(headers)
 
-        # Mărim iconițele să se vadă bine
+        # Setări generale tabel
         self.tableView.setIconSize(QtCore.QSize(60, 60))
         self.tableView.verticalHeader().setVisible(False)
-        # Facem rândurile mai înalte
         self.tableView.verticalHeader().setDefaultSectionSize(70)
         self.tableView.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
-        for i, (nume, info) in enumerate(data):
+        for i, info in enumerate(data):
             # 0. Loc
             item_loc = QStandardItem(str(i + 1))
             item_loc.setTextAlignment(QtCore.Qt.AlignCenter)
             model.setItem(i, 0, item_loc)
 
-            # 1. Avatar (FIXAT PENTRU AFIȘARE CORECTĂ)
+            # 1. Avatar
             item_avatar = QStandardItem()
-
-            # Încercăm să reparăm calea dacă e relativă
             avatar_path = info['avatar']
-
-            # Verificăm 2 scenarii: Cale absolută sau Cale relativă la Root
             possible_paths = [
-                avatar_path,  # Cale absolută
-                os.path.join(self.root_dir, avatar_path),  # Root/asset/...
-                os.path.join(self.games_dir, avatar_path)  # Games/img/...
+                avatar_path,  # cale absolută
+                os.path.join(self.root_dir, avatar_path),
+                os.path.join(self.games_dir, avatar_path)
             ]
-
             found_icon = False
             for path in possible_paths:
                 if os.path.exists(path):
-                    # Încărcăm imaginea, o facem pătrată și o punem în icon
-                    pixmap = QPixmap(path)
-                    # O scalăm să arate bine
-                    pixmap = pixmap.scaled(60, 60, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                    pixmap = QPixmap(path).scaled(60, 60, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
                     item_avatar.setIcon(QIcon(pixmap))
                     found_icon = True
                     break
-
             if not found_icon:
                 item_avatar.setText("No Img")
-
             model.setItem(i, 1, item_avatar)
 
             # 2. Nume
-            item_nume = QStandardItem(nume)
+            item_nume = QStandardItem(info['nume'])
             item_nume.setTextAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
             font_nume = item_nume.font()
             font_nume.setPointSize(12)
@@ -167,15 +161,15 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
             font_spec.setBold(True)
             item_spec.setFont(font_spec)
 
-            # Culori specifice
-            if info['spec'] == "AIA":
-                item_spec.setForeground(QtGui.QColor("#2980b9"))
-            elif info['spec'] == "IE":
-                item_spec.setForeground(QtGui.QColor("#d35400"))
-            elif info['spec'] == "IEC":
-                item_spec.setForeground(QtGui.QColor("#8e44ad"))
-            elif info['spec'] == "IETTI":
-                item_spec.setForeground(QtGui.QColor("#16a085"))
+            # Culori specifice specializare
+            colors = {
+                "AIA": "#2980b9",
+                "IE": "#d35400",
+                "IEC": "#8e44ad",
+                "IETTI": "#16a085"
+            }
+            if info['spec'] in colors:
+                item_spec.setForeground(QtGui.QColor(colors[info['spec']]))
 
             model.setItem(i, 3, item_spec)
 
@@ -190,14 +184,12 @@ class LeaderboardWindow(QtWidgets.QMainWindow):
 
         self.tableView.setModel(model)
 
-        # Ajustări lățime coloane
+        # Ajustări coloane
         self.tableView.setColumnWidth(0, 50)  # Loc
         self.tableView.setColumnWidth(1, 80)  # Avatar
-        self.tableView.setColumnWidth(3, 120)  # Spec
-        self.tableView.setColumnWidth(4, 100)  # Scor
-
-        # Numele ia restul locului
-        self.tableView.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)
+        self.tableView.setColumnWidth(3, 120)  # Specializare
+        self.tableView.setColumnWidth(4, 100)  # Punctaj
+        self.tableView.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.Stretch)  # Nume ia restul spațiului
 
 
 if __name__ == '__main__':
